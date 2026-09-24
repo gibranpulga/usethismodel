@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Choose the right AI model, route, and harness for the work.">
+  <title>UseThisModel — AI model routing guide</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <aside class="rail"><a class="brand" href="/" aria-label="UseThisModel home"><span class="brand-mark">U</span><span>UseThisModel</span></a>
+    <div class="nav-label">EXPLORE</div><nav>{% for section in sections %}<a href="/{{ section|lower|replace(' ', '-') }}" {% if loop.first %}class="active"{% endif %}><span class="nav-dot"></span>{{ section }}</a>{% endfor %}</nav>
+    <div class="rail-bottom"><span class="live-dot"></span>Catalog foundation <span class="version">v0.1</span></div>
+  </aside>
+  <main><header><div class="crumb">OVERVIEW <span>/</span> HOME</div><button id="theme-toggle" class="theme-toggle" aria-label="Toggle color theme">☼ <span>Appearance</span></button></header>
+    <section class="intro"><div class="eyebrow"><span class="live-dot"></span> INDEPENDENT MODEL ROUTING GUIDE</div><h1>Find the right model<br>for <span>the work.</span></h1><p>Compare models, provider routes, harnesses, real capabilities, and the offers that change the math.</p><div class="search"><span>⌕</span><input aria-label="Search models" placeholder="Search models, providers, or use cases…"><kbd>⌘ K</kbd></div></section>
+    <section class="metrics"><article><span>MODELS TRACKED</span><strong>—</strong><small>Catalog groundwork underway</small></article><article><span>PROVIDER ROUTES</span><strong>—</strong><small>Pricing belongs to the route</small></article><article><span>HARNESS MATCHES</span><strong>—</strong><small>Compatibility has multiple layers</small></article><article><span>ACTIVE OFFERS</span><strong>—</strong><small>Plans, credits, and discounts</small></article></section>
+    <section class="content-grid"><article class="panel focus"><div class="panel-top"><div><div class="eyebrow">START HERE</div><h2>What are you trying to do?</h2></div><span class="arrow">↗</span></div><p>Recommendations will combine the model, the route, and the harness around your task.</p><div class="usecases"><a href="/use-cases">⌘ <span>Coding</span><b>→</b></a><a href="/use-cases">◎ <span>Reasoning</span><b>→</b></a><a href="/use-cases">↗ <span>Agentic coding</span><b>→</b></a><a href="/use-cases">◫ <span>Long context</span><b>→</b></a><a href="/use-cases">◉ <span>Vision & media</span><b>→</b></a><a href="/use-cases">⌁ <span>Low latency</span><b>→</b></a></div></article>
+      <article class="panel principle"><div class="eyebrow">A BETTER WAY TO COMPARE</div><h2>One model.<br><span>Many routes.</span></h2><p>Price and capabilities change by provider. Open weights do not mean a free API, and tool calling does not mean MCP support.</p><div class="route"><span class="route-icon">◈</span><div><strong>Model × provider × harness</strong><small>Make the whole path visible</small></div><span class="route-arrow">↗</span></div></article></section>
+    <footer><span>Built for decisions, grounded in sources.</span><span>Prices and capabilities will show provenance and last-checked dates.</span></footer>
+  </main>
+<script src="{{ url_for('static', filename='theme.js') }}"></script></body></html>
