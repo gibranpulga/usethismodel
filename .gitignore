@@ -1,4 +1,6 @@
 .venv/
+.get-pip.py
+gunicorn.log
 __pycache__/
 *.py[cod]
 .env
