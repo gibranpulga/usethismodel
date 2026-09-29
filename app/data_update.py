@@ -59,12 +59,9 @@ def observe(db, entity, field, source, url, source_id, value, now, accepted=True
         known = db.execute('SELECT id FROM data_observations WHERE entity=? AND field=? AND source=? AND value_json=? AND accepted=0', (entity, field, source, raw)).fetchone()
         if known:
             return known[0]
-    if last and last['value_json'] == raw and last['accepted'] == int(accepted):
+    if last and json.loads(last['value_json']) == value and last['accepted'] == int(accepted):
         return last['id']
-    cursor = db.execute('INSERT OR IGNORE INTO data_observations(entity,field,source,source_url,source_id,value_json,priority,observed_at,accepted,evidence) VALUES(?,?,?,?,?,?,?,?,?,?)', (entity, field, source, url, source_id, raw, priority(source, field), now, int(accepted), evidence))
-    if cursor.rowcount:
-        return cursor.lastrowid
-    return db.execute('SELECT id FROM data_observations WHERE entity=? AND field=? AND source=? AND value_json=? AND observed_at=?', (entity, field, source, raw, now)).fetchone()[0]
+    return db.execute('INSERT INTO data_observations(entity,field,source,source_url,source_id,value_json,priority,observed_at,accepted,evidence) VALUES(?,?,?,?,?,?,?,?,?,?)', (entity, field, source, url, source_id, raw, priority(source, field), now, int(accepted), evidence)).lastrowid
 
 
 def quarantine_legacy(db, report, now):
@@ -187,7 +184,14 @@ def guard_sources(db, records, manifests, report, now):
                 for field, value in sorted(r['fields'].items()):
                     observe(db, f"source-route:{r['provider_key']}:{r['api_model_id']}", field, source, r['source_url'], None, value, now, False, '; '.join(reasons))
             continue
+        listings = sorted(f"{r['provider_key']}:{r['api_model_id']}" for r in items)
+        for missing in sorted(set(old.get('listings', [])) - set(listings)):
+            entity = 'source-route:' + missing
+            reason = 'Route missing from successful source; expiry unconfirmed, previous facts retained'
+            observe(db, entity, 'listed', source, items[0]['source_url'], None, False, now, False, reason)
+            review(db, report, now, entity, 'listing removed', True, False, [items[0]['source_url']], reason)
         manifest = dict(manifests.get(source, {}))
+        manifest['listings'] = listings
         manifest.update(count=len(items), priced=priced, providers={p: {'count': len(rs), 'paid': sum((r['fields'].get('input_price') or 0) > 0 or (r['fields'].get('output_price') or 0) > 0 for r in rs)} for p, rs in sorted(providers.items())})
         db.execute('INSERT INTO source_state VALUES(?,?) ON CONFLICT(source) DO UPDATE SET manifest_json=excluded.manifest_json', (source, encode(manifest)))
         allowed.extend(items)
@@ -202,7 +206,7 @@ def resolve(db, entity, field, report, now):
         return
     chosen = candidates[0]
     for other in candidates[1:]:
-        if other['value_json'] != chosen['value_json']:
+        if json.loads(other['value_json']) != json.loads(chosen['value_json']):
             key = review(db, report, now, entity, field, json.loads(chosen['value_json']), json.loads(other['value_json']), [chosen['source_url'], other['source_url']], 'Sources disagree; displayed value follows precedence', f"Selected {chosen['source']} ({chosen['priority']}); alternative {other['source']} ({other['priority']})", 'MEDIUM')
             if any(r['id'] == key for r in report['Manual-review items']):
                 report['Conflicts'].append({'entity': entity, 'field': field, 'selected': json.loads(chosen['value_json']), 'alternative': json.loads(other['value_json']), 'sources': [chosen['source_url'], other['source_url']]})

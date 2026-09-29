@@ -57,7 +57,8 @@ merge. Ambiguous duplicate identities go to review.
   reports preserve the review/rejected evidence; production stays unchanged.
 
 A missing route is not proof of expiry. Large disappearances fail safety gates;
-smaller removals retain the last known evidence pending later source confirmation.
+smaller removals retain the last known evidence and create an expiry-review item.
+An absent route is never automatically advertised as a confirmed expired offer.
 Free-route expiry is reported when accepted prices cease to be zero. Offers with
 explicit passed end dates expire deterministically; no subscription/offer page is
 scraped and no new offers are invented. The report contains all requested sections,

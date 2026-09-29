@@ -307,3 +307,30 @@ def test_exported_shards_apply_and_reject_tampering(db, tmp_path):
     with pytest.raises(ValueError, match='checksum'):
         apply_snapshot(db, output / 'catalog.json')
     assert encode(snapshot(db)) == expected
+
+
+def test_fresh_value_reappearing_after_legacy_baseline_wins_in_first_run(db):
+    provider = db.execute("INSERT INTO providers(name) VALUES('Verification')").lastrowid
+    mid = db.execute('SELECT id FROM models LIMIT 1').fetchone()[0]
+    oid = db.execute("INSERT INTO provider_offerings(model_id,provider_id,api_model_id,source_id) VALUES(?,?,'verification-model',1)", (mid, provider)).lastrowid
+    for price in (2, 3):
+        db.execute("INSERT INTO pricing_records(offering_id,price_type,amount,source_id) VALUES(?,'INPUT',?,1)", (oid, price))
+    db.commit()
+    run(db, [record(fields={'input_price': 2})])
+    assert prices(db, oid)['INPUT'] == 2
+    before = encode(snapshot(db))
+    run(db, [record(fields={'input_price': 2.0})], LATER)
+    assert encode(snapshot(db)) == before
+
+
+def test_equal_numeric_values_are_not_conflicts(db):
+    report = run(db, [record('models.dev', {'input_price': 2}), record('litellm', {'input_price': 2.0})])
+    oid = route(db)['id']
+    assert not [r for r in report['Conflicts'] if r['entity'] == f'offering:{oid}']
+
+
+def test_small_listing_removals_queue_expiry_review_without_erasing_prices(db):
+    run(db, [record(api_id=f'model-{i}') for i in range(12)])
+    report = run(db, [record(api_id=f'model-{i}') for i in range(11)], LATER)
+    assert prices(db, route(db, 'model-11')['id'])['INPUT'] == 2
+    assert any(r['field'] == 'listing removed' for r in report['Manual-review items'])
