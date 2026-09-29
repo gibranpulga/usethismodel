@@ -377,3 +377,22 @@ def test_published_snapshot_is_reconciled_before_new_fetch(db, tmp_path, monkeyp
     monkeypatch.setattr(sys, 'argv', ['data_update', 'update', '--database', database, '--base-snapshot', str(base / 'catalog.json'), '--output-dir', str(tmp_path / 'updated')])
     main()
     assert prices(db, oid)['INPUT'] == 2
+
+
+def test_validation_rejects_duplicate_current_price(db):
+    from app.data_update import validate
+
+    run(db, [record()])
+    oid = route(db)["id"]
+    db.execute("INSERT INTO pricing_records(offering_id,price_type,amount,unit) VALUES(?,'INPUT',9,'per_1m_tokens')", (oid,))
+    with pytest.raises(ValueError, match="Duplicate current price"):
+        validate(db)
+
+
+def test_validation_requires_active_offer_verification(db):
+    from app.data_update import validate
+
+    provider = db.execute("SELECT id FROM providers LIMIT 1").fetchone()[0]
+    db.execute("INSERT INTO offers(provider_id,title,offer_type,status) VALUES(?,'Unverified','PROMO','ACTIVE')", (provider,))
+    with pytest.raises(ValueError, match="verification timestamp"):
+        validate(db)

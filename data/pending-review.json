@@ -1430,6 +1430,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "0b296e52692ceb96bf3f0ba9",
+    "entity": "offering:2793",
+    "proposed_change": "output_price",
+    "current_value": "3.49",
+    "proposed_value": "2.44",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://models.dev/api.json\"]",
+    "evidence": "Selected openrouter (20); alternative models.dev (30)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:41:48+00:00"
+  },
+  {
     "id": "0b3fb8a8f19ad785901b91fe",
     "entity": "model:1102",
     "proposed_change": "release_date",
@@ -3781,6 +3794,19 @@
     "reason": "Similar name has a different canonical ID; no automatic fuzzy merge",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "1aed5d2412bbb4bbcbf0553f",
+    "entity": "source-route:llmgateway-providers:azure/o3",
+    "proposed_change": "listing removed",
+    "current_value": "true",
+    "proposed_value": "false",
+    "sources": "[\"https://models.dev/api.json\"]",
+    "evidence": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "confidence": "LOW",
+    "reason": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
   },
   {
     "id": "1b0974359578d421b0018e76",
@@ -7122,6 +7148,19 @@
     "reason": "Sources disagree; displayed value follows precedence",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "2f11f2ad87be4b95b424149c",
+    "entity": "source-route:llmgateway-providers:azure/o3-mini",
+    "proposed_change": "listing removed",
+    "current_value": "true",
+    "proposed_value": "false",
+    "sources": "[\"https://models.dev/api.json\"]",
+    "evidence": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "confidence": "LOW",
+    "reason": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
   },
   {
     "id": "2f1dd4cf59a9ecb2045298fc",
@@ -10478,6 +10517,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "4876cccf2892c946b25c069e",
+    "entity": "source-route:llmgateway-providers:azure/gpt-4-turbo",
+    "proposed_change": "listing removed",
+    "current_value": "true",
+    "proposed_value": "false",
+    "sources": "[\"https://models.dev/api.json\"]",
+    "evidence": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "confidence": "LOW",
+    "reason": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
+  },
+  {
     "id": "4886aa3daaca925be04a919c",
     "entity": "model:82",
     "proposed_change": "release_date",
@@ -11609,6 +11661,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "525bc69bec0992d1ea061405",
+    "entity": "offering:2793",
+    "proposed_change": "output_price",
+    "current_value": "2.44",
+    "proposed_value": "4.2",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json\"]",
+    "evidence": "Selected openrouter (20); alternative litellm (40)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
+  },
+  {
     "id": "52625046e357679c2a827db9",
     "entity": "model:766",
     "proposed_change": "release_date",
@@ -11659,6 +11724,19 @@
     "reason": "Sources disagree; displayed value follows precedence",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "52f3a25e339b8513d949c7fe",
+    "entity": "source-route:llmgateway-providers:azure/gpt-3.5-turbo",
+    "proposed_change": "listing removed",
+    "current_value": "true",
+    "proposed_value": "false",
+    "sources": "[\"https://models.dev/api.json\"]",
+    "evidence": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "confidence": "LOW",
+    "reason": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
   },
   {
     "id": "53068143d6315402d2dd4f88",
@@ -12816,6 +12894,19 @@
     "reason": "Conflicting values within one source; retained previous value",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "5afda18feacd1706a64601cb",
+    "entity": "Hermes Agent",
+    "proposed_change": "documentation changed",
+    "current_value": "{\"content_hash\":\"85b01aac9b78bc412dfe7228339ba3d2d073e6f8\",\"evidence\":{\"commit_sha\":\"85b01aac9b78bc412dfe7228339ba3d2d073e6f8\",\"committed_at\":\"2026-09-29T15:04:45Z\",\"docs_url\":\"https://hermes-agent.nousresearch.com/docs/\",\"meaning\":\"Documentation revision changed; capabilities require review.\",\"path\":\"website/docs\",\"title\":\"fix(cli): diagnose stale toolsets and disabled platforms\"},\"url\":\"https://github.com/NousResearch/hermes-agent/commit/85b01aac9b78bc412dfe7228339ba3d2d073e6f8\"}",
+    "proposed_value": "{\"content_hash\":\"7cadfaa668587a2be683c069373ca5ea3ca65fca\",\"evidence\":{\"commit_sha\":\"7cadfaa668587a2be683c069373ca5ea3ca65fca\",\"committed_at\":\"2026-09-29T20:30:33Z\",\"docs_url\":\"https://hermes-agent.nousresearch.com/docs/\",\"meaning\":\"Documentation revision changed; capabilities require review.\",\"path\":\"website/docs\",\"title\":\"fix(api_server): honour include_compacted on /api/sessions/{id}/messages\"},\"url\":\"https://github.com/NousResearch/hermes-agent/commit/7cadfaa668587a2be683c069373ca5ea3ca65fca\"}",
+    "sources": "[\"https://api.github.com/repos/NousResearch/hermes-agent/commits?path=website%2Fdocs&per_page=1\",\"https://github.com/NousResearch/hermes-agent/commit/7cadfaa668587a2be683c069373ca5ea3ca65fca\"]",
+    "evidence": "{\"commit_sha\":\"7cadfaa668587a2be683c069373ca5ea3ca65fca\",\"committed_at\":\"2026-09-29T20:30:33Z\",\"docs_url\":\"https://hermes-agent.nousresearch.com/docs/\",\"meaning\":\"Documentation revision changed; capabilities require review.\",\"path\":\"website/docs\",\"title\":\"fix(api_server): honour include_compacted on /api/sessions/{id}/messages\"}",
+    "confidence": "HIGH",
+    "reason": "Official documentation changed; capability interpretation requires review",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
   },
   {
     "id": "5b14dae51b682dac617d9916",
@@ -17288,6 +17379,19 @@
     "reason": "Conflicting values within one source; retained previous value",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "7b173b8a29ab067a110571f2",
+    "entity": "source-route:llmgateway-providers:azure/gpt-4",
+    "proposed_change": "listing removed",
+    "current_value": "true",
+    "proposed_value": "false",
+    "sources": "[\"https://models.dev/api.json\"]",
+    "evidence": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "confidence": "LOW",
+    "reason": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
   },
   {
     "id": "7b2ef7b0bd6775edaa626c3a",
@@ -25181,6 +25285,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "b22a85d92141f062fbda3873",
+    "entity": "source-route:llmgateway-providers:azure/o1",
+    "proposed_change": "listing removed",
+    "current_value": "true",
+    "proposed_value": "false",
+    "sources": "[\"https://models.dev/api.json\"]",
+    "evidence": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "confidence": "LOW",
+    "reason": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
+  },
+  {
     "id": "b2323c49de0499685f907183",
     "entity": "offering:1083",
     "proposed_change": "input_price",
@@ -26531,6 +26648,19 @@
     "reason": "Legacy invalid token limit quarantined",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "bda08b9e58e3601ea1d3a5b8",
+    "entity": "source-route:llmgateway-providers:azure/o4-mini",
+    "proposed_change": "listing removed",
+    "current_value": "true",
+    "proposed_value": "false",
+    "sources": "[\"https://models.dev/api.json\"]",
+    "evidence": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "confidence": "LOW",
+    "reason": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
   },
   {
     "id": "bdc09871130a29327b2f74c3",
@@ -28208,6 +28338,19 @@
     "reason": "Conflicting values within one source; retained previous value",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "c9423b4d5967273645368c4a",
+    "entity": "offering:2797",
+    "proposed_change": "cache_read_price",
+    "current_value": "0.0768935",
+    "proposed_value": "0.076894",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://models.dev/api.json\"]",
+    "evidence": "Selected openrouter (20); alternative models.dev (30)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
   },
   {
     "id": "c950f947b62160cfa8f8f0c8",
@@ -31211,6 +31354,19 @@
     "reason": "Conflicting values within one source; retained previous value",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "dedfe53fafe6576f544e5cc7",
+    "entity": "offering:2868",
+    "proposed_change": "cache_read_price",
+    "current_value": "0.1",
+    "proposed_value": "0.2",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json\"]",
+    "evidence": "Selected openrouter (20); alternative litellm (40)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
   },
   {
     "id": "dee09c002d0f58ea1b75e2c2",
@@ -34396,6 +34552,19 @@
     "reason": "Conflicting values within one source; retained previous value",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "f45a43b14bfe4a45d99922c6",
+    "entity": "source-route:llmgateway-providers:azure/gpt-5.2-pro",
+    "proposed_change": "listing removed",
+    "current_value": "true",
+    "proposed_value": "false",
+    "sources": "[\"https://models.dev/api.json\"]",
+    "evidence": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "confidence": "LOW",
+    "reason": "Route missing from successful source; expiry unconfirmed, previous facts retained",
+    "status": "PENDING",
+    "created_at": "2026-09-29T20:39:33+00:00"
   },
   {
     "id": "f46fd8089075e39c6d57ecc5",

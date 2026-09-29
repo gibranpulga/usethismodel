@@ -140,7 +140,9 @@ def test_unknown_and_provider_specific_override(app):
 
 def test_catalog_detail_pages(client):
     for path in ["/models/1", "/providers/1", "/harnesses/1"]:
-        assert client.get(path).status_code == 200
+        response = client.get(path)
+        assert response.status_code == 301
+        assert client.get(response.location).status_code == 200
 
 
 @pytest.mark.parametrize(
@@ -196,7 +198,7 @@ def test_media_routes_keep_native_pricing_units_and_features(client):
     assert response.status_code == 200
     assert b"Hunyuan 3D 3.1" in response.data
     assert b"per 3d generation" in response.data
-    detail = client.get("/models/11")
+    detail = client.get("/models/11", follow_redirects=True)
     assert detail.status_code == 200
     assert b"Media capabilities" in detail.data
     assert b"text to 3d" in detail.data
@@ -227,7 +229,7 @@ def test_price_history_preserves_previous_observation(app, client):
         assert summary["previous"] == 1.4
         assert summary["current"] == 1.2
         assert summary["change_percent"] < 0
-    response = client.get(f"/routes/{offering}")
+    response = client.get(f"/routes/{offering}", follow_redirects=True)
     assert b"Lowest observed" in response.data
     assert b"All observations (2)" in response.data
 
@@ -248,3 +250,51 @@ def test_value_sort_uses_visible_formula(app):
     with app.app_context():
         rows = [row for row in route_rows(get_db(), {"tools": "1", "sort": "value"}) if row["value_score"] is not None]
     assert rows == sorted(rows, key=lambda row: row["value_score"])
+
+
+def test_public_api_contract_and_filters(client):
+    response = client.get("/api/v1/models?tools=true&max_output_price=1&harness=hermes-agent")
+    assert response.status_code == 200
+    assert response.json["meta"]["api_version"] == "v1"
+    assert all(route["capabilities"]["tools"] == "YES"
+               for model in response.json["data"] for route in model["routes"])
+    search = client.get("/api/v1/search?type=3d")
+    assert search.status_code == 200
+    assert all(item["model"]["type"] == "3D generation" for item in search.json["data"])
+    assert client.post("/api/v1/models").status_code == 405
+
+
+def test_public_api_resources_and_slug_detail(client):
+    for path in ["/api/v1", "/api/v1/providers", "/api/v1/harnesses", "/api/v1/offers",
+                 "/api/v1/releases", "/api/v1/benchmarks"]:
+        response = client.get(path)
+        assert response.status_code == 200
+        assert "data" in response.json and "meta" in response.json
+    detail = client.get("/api/v1/models/zhipuai/glm-5.3")
+    assert detail.status_code == 200
+    assert detail.json["data"]["slug"] == "zhipuai/glm-5.3"
+
+
+def test_seo_discovery_and_filter_index_policy(client):
+    assert client.get("/robots.txt").status_code == 200
+    assert b"Sitemap:" in client.get("/robots.txt").data
+    assert b"<urlset" in client.get("/sitemap.xml").data
+    assert client.get("/feeds/releases.atom").mimetype == "application/atom+xml"
+    assert client.get("/feeds/price-changes.atom").mimetype == "application/atom+xml"
+    filtered = client.get("/models?tools=1")
+    assert b'name="robots" content="noindex,follow"' in filtered.data
+    assert b'rel="canonical"' in filtered.data
+
+
+def test_search_keeps_model_punctuation_and_keyword_boundaries(client):
+    assert b"GLM-5.3" in client.get("/models?q=glm-5.3").data
+    interpreted, _ = interpret_search({"q": "notopenrouterish"})
+    assert "access" not in interpreted
+
+
+@pytest.mark.parametrize("path", [
+    "/models?offering_id=nope", "/models?model_id=nope", "/models?provider_id=nope",
+    "/calculator?input_tokens=nope&output_tokens=-5&cache_share=what",
+])
+def test_malformed_public_numeric_inputs_do_not_error(client, path):
+    assert client.get(path).status_code == 200

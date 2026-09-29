@@ -51,6 +51,21 @@ value in deployed environments. `DATABASE_PATH` selects the SQLite file;
 Coolify deployments should mount persistent storage at `/data` because the
 container image stores the database at `/data/usethismodel.sqlite3`.
 
+## Public read-only API and discovery
+
+Human-readable API documentation is at `/api`; the versioned JSON root is
+`/api/v1`. Resources cover models and individual canonical slugs, providers,
+harnesses, offers, releases, benchmarks, compatibility, and route search.
+Responses use a stable `{data, meta}` envelope and preserve null/`UNKNOWN`
+instead of inferring missing facts. Combined filters include `tools=true`,
+`max_output_price=1`, `harness=hermes-agent`, `mcp=true`, `offers=current`,
+`releases=7-days`, and `type=3d`.
+
+Crawler discovery is exposed through `/sitemap.xml`, `/robots.txt`,
+`/feeds/releases.atom`, and `/feeds/price-changes.atom`. Arbitrary search and
+filter combinations are canonicalized to their base page and marked
+`noindex,follow`; stable entity pages remain indexable.
+
 ## Project structure
 
 ```text
@@ -101,7 +116,7 @@ the `main` branch. Persistent storage is mounted at `/data`, and
 For this workstation, the personal `coolify` skill manages the REST API over
 SSH. Its credentials are stored outside this repository. Deployment was
 verified on 2026-09-29: Docker build, healthy container, valid HTTPS, all
-placeholder routes, static assets, both SQLite migrations, and database
+public routes, static assets, all SQLite migrations, and database
 integrity passed. The catalog maintenance workflow is described below.
 
 
@@ -130,3 +145,40 @@ The persistent database remains in the Coolify volume. Historical reports live i
 `data/reports/` and private VPS `state/reports/`; unresolved evidence is in
 `data/pending-review.json`. Do not hand-edit generated snapshots; update the source
 observations and regenerate them.
+
+### Migrations, backup, and restore
+
+Migrations in `migrations/` run in numeric order at startup and are recorded in
+`schema_migrations`; never edit an already-deployed migration. Add the next SQL
+file and test both an empty database and a copy of production data.
+
+For a consistent local backup with no application writer running:
+
+```sh
+sqlite3 instance/usethismodel.sqlite3 '.backup /private/usethismodel-backup.sqlite3'
+```
+
+Stop application writers before a manual restore, retain the displaced database,
+copy the verified backup to `DATABASE_PATH`, then run `PRAGMA integrity_check`,
+`PRAGMA foreign_key_check`, `make data-validate`, and a smoke test before restart.
+The production scheduler makes online backups from the persistent `/data` volume;
+full recovery details are in [daily operations](docs/daily-data-update.md).
+
+### Manual updates and new catalog entities
+
+Do not edit generated snapshot shards. Add or correct source observations through
+an adapter in `app/update_sources.py`, run `make data-dry-run`, review the report,
+then run `make data-update`. A provider must preserve exact route identifiers,
+route-specific prices/limits/capabilities, and sources. A harness needs provider
+compatibility modes, MCP facts, caveats, and sources. A benchmark needs a unique
+name/version, stated metric, publisher evidence, and the harness/scaffold when one
+was used. See [source adapter semantics](docs/update-sources.md).
+
+### Logs, deployment, and common failures
+
+Local Flask/Gunicorn logs go to the terminal. The VPS updater keeps private,
+rotated logs and sanitized reports under `~/usethismodel-updater/state/`; Coolify
+holds build/runtime logs. Source collapse, total source outage, invalid data,
+dirty/diverged Git state, failed tests, or snapshot validation stop publication
+without erasing the last valid catalog. For deployment and cron recovery, follow
+[daily operations](docs/daily-data-update.md).

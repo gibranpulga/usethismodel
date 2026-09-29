@@ -114,9 +114,9 @@ def _vision(modalities):
 def _canonical(provider, api_id, explicit=None):
     if explicit:
         return _identifier(explicit, "canonical model ID")
-    # Unqualified IDs are provider-scoped. Route IDs that already contain the
-    # serving provider prefix need no second prefix. No case/date/suffix stripping.
-    return api_id if api_id.startswith(provider + "/") else f"{provider}/{api_id}"
+    # A vendor-qualified model ID remains canonical across gateways. Only an
+    # unqualified ID is provider-scoped. No case/date stripping or fuzzy merge.
+    return api_id if "/" in api_id else f"{provider}/{api_id}"
 
 
 def _record(source, url, kind, priority, provider, provider_name, api_id, canonical, name, fields):
@@ -213,7 +213,7 @@ def parse_openrouter(payload):
                 "openrouter",
                 "OpenRouter",
                 api_id,
-                item.get("canonical_slug") or _canonical("openrouter", api_id),
+                (item.get("canonical_slug") or api_id).removesuffix(":batch").removesuffix(":free"),
                 item.get("name") or api_id,
                 fields,
             )
@@ -254,7 +254,7 @@ def parse_litellm(payload):
                 provider,
                 name,
                 api_id,
-                _canonical(provider, api_id),
+                _canonical(provider, api_id).removesuffix(":batch").removesuffix(":free"),
                 api_id,
                 fields,
             )

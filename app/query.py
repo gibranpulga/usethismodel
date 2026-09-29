@@ -36,7 +36,7 @@ def interpret_search(filters):
     raw = str(result.get("q", "")).strip()
     if not raw:
         return result, []
-    text = re.sub(r"[-_]", " ", raw.lower())
+    text = raw.lower()
     applied = []
 
     def set_if_empty(key, value, label):
@@ -62,9 +62,9 @@ def interpret_search(filters):
     if re.search(r"\btools?\b|tool[ -]?capable|function calling", text):
         set_if_empty("tools", "1", "Tool calling: yes")
         text = re.sub(r"\btools?\b|tool[ -]?capable|function calling", " ", text)
-    if "openrouter" in text:
+    if re.search(r"\bopenrouter\b", text):
         set_if_empty("access", "openrouter", "Access: OpenRouter")
-        text = text.replace("openrouter", " ")
+        text = re.sub(r"\bopenrouter\b", " ", text)
     if re.search(r"\b1m\b|1\s*million", text) and "context" in text:
         set_if_empty("context", "1000000", "Context: 1M+")
         text = re.sub(r"\b1m\b|1\s*million|context", " ", text)
@@ -116,14 +116,23 @@ def route_rows(db, filters=None):
         limit = 100
     clauses, params = ["1=1"], []
     if filters.get("offering_id") is not None:
+        try:
+            params.append(int(filters["offering_id"]))
+        except (TypeError, ValueError):
+            return []
         clauses.append("o.id=?")
-        params.append(int(filters["offering_id"]))
     if filters.get("model_id") is not None:
         clauses.append("m.id=?")
-        params.append(int(filters["model_id"]))
+        try:
+            params.append(int(filters["model_id"]))
+        except (TypeError, ValueError):
+            return []
     if filters.get("provider_id") is not None:
         clauses.append("p.id=?")
-        params.append(int(filters["provider_id"]))
+        try:
+            params.append(int(filters["provider_id"]))
+        except (TypeError, ValueError):
+            return []
     q = filters.get("q", "").strip()
     if q:
         clauses.append("(lower(m.canonical_name) LIKE ? OR lower(o.api_model_id) LIKE ? OR lower(p.name) LIKE ? OR lower(COALESCE(l.name,m.vendor)) LIKE ?)")
@@ -190,6 +199,8 @@ def route_rows(db, filters=None):
         SELECT o.id offering_id,o.api_model_id,o.context_limit,o.max_output_tokens,o.tool_support,
           o.structured_output_support,o.free_status,o.caveat,o.fetched_at,m.id model_id,
           o.rate_limit_note,o.privacy_caveat,o.commercial_use,o.first_seen_at,
+          (SELECT name FROM sources WHERE id=o.source_id) route_source_name,
+          (SELECT url FROM sources WHERE id=o.source_id) route_source_url,
           m.canonical_name,m.canonical_slug,m.modality,m.open_weights,m.status,m.released_at,
           COALESCE(l.name,m.vendor) lab_name,p.id provider_id,p.name provider_name,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) input_price,
@@ -241,22 +252,26 @@ def price_history(db, offering_id):
     )]
     grouped = {}
     for row in rows:
-        grouped.setdefault(row["price_type"], []).append(row)
+        key = (row["price_type"], row["unit"], row["context_threshold"], row["price_note"])
+        grouped.setdefault(key, []).append(row)
     summaries = []
-    for price_type, records in grouped.items():
-        current = next((r for r in records if r["valid_until"] is None), records[0])
-        previous = next((r for r in records if r["id"] != current["id"] and (r["valid_until"] is not None or r["amount"] != current["amount"])), None)
+    for (price_type, unit, threshold, note), records in grouped.items():
+        current = next((r for r in records if r["valid_until"] is None), None)
+        reference = current or records[0]
+        previous = next((r for r in records if r["id"] != reference["id"] and r["amount"] != reference["amount"]), None)
         prior = previous["amount"] if previous else None
-        change = ((current["amount"] - prior) / prior * 100) if prior not in (None, 0) else None
+        change = ((reference["amount"] - prior) / prior * 100) if current and prior not in (None, 0) else None
         summaries.append({
             "price_type": price_type,
-            "unit": current["unit"],
-            "currency": current["currency"],
-            "current": current["amount"],
+            "unit": unit,
+            "currency": reference["currency"],
+            "current": current["amount"] if current else None,
             "previous": prior,
             "change_percent": change,
-            "date_changed": current["valid_from"],
+            "date_changed": reference["valid_from"],
             "lowest": min(r["amount"] for r in records),
+            "context_threshold": threshold,
+            "price_note": note,
             "records": records,
         })
     return sorted(summaries, key=lambda item: item["price_type"])
@@ -308,6 +323,7 @@ def ranking_groups(db):
         m.canonical_name,s.name source_name,s.url source_url
       FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id
       JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
+      WHERE br.confidence IN ('HIGH','MEDIUM')
       ORDER BY br.score DESC LIMIT 12
     """).fetchall()]
     coding = [r for r in benchmark if "cod" in (r["category"] or "").lower()]

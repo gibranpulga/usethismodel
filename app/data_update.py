@@ -143,9 +143,16 @@ def validate(db):
         errors.append('Free route without both explicit zero prices')
     if db.execute("SELECT 1 FROM models WHERE release_date_kind='first_seen'").fetchone():
         errors.append('Discovery date used as release date')
+    duplicate = db.execute("""SELECT offering_id,price_type,unit,COALESCE(context_threshold,-1),COUNT(*)
+      FROM pricing_records WHERE valid_until IS NULL
+      GROUP BY offering_id,price_type,unit,COALESCE(context_threshold,-1) HAVING COUNT(*)>1 LIMIT 1""").fetchone()
+    if duplicate:
+        errors.append(f'Duplicate current price records for offering {duplicate[0]} {duplicate[1]}')
+    if db.execute("SELECT 1 FROM offers WHERE status='ACTIVE' AND last_verified_at IS NULL").fetchone():
+        errors.append('Active offer without verification timestamp')
     if errors:
         raise ValueError('; '.join(errors[:20]))
-    return {'integrity': 'ok', 'foreign_keys': 'ok', 'prices': 'ok', 'limits': 'ok', 'free_routes': 'ok', 'release_dates': 'ok'}
+    return {'integrity': 'ok', 'foreign_keys': 'ok', 'prices': 'ok', 'limits': 'ok', 'free_routes': 'ok', 'release_dates': 'ok', 'current_price_uniqueness': 'ok', 'offer_verification': 'ok'}
 
 
 def guard_sources(db, records, manifests, report, now):

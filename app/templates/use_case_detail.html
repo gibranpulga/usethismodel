@@ -1,0 +1,6 @@
+{% extends "placeholder.html" %}{% block content %}
+<section class="page-intro compact"><div class="eyebrow">USE CASE</div><h1>{{ use_case.name }}</h1><p>{{ use_case.description or 'A factual view of documented model suitability.' }}</p></section>
+<p class="method-note">Classifications are evidence-backed catalog facts, not a universal score. Provider price, tools, limits, and harness compatibility still depend on the exact route.</p>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>Model</th><th>Classification</th><th>Confidence</th><th>Rationale</th><th>Source / verified</th></tr></thead><tbody>{% for row in scores %}<tr><td><a href="/models/{{ row.canonical_slug }}">{{ row.canonical_name }}</a></td><td>{{ row.classification|replace('_',' ')|title }}</td><td>{{ row.confidence|title }}</td><td>{{ row.rationale or 'No rationale recorded.' }}</td><td>{% if row.source_url %}<a href="{{ row.source_url }}" rel="noreferrer">{{ row.source_name }}</a> · {{ row.fetched_at[:10] if row.fetched_at else 'date unknown' }}{% else %}Unknown{% endif %}</td></tr>{% else %}<tr><td colspan="5">No source-backed classifications recorded yet.</td></tr>{% endfor %}</tbody></table></div>
+<p><a class="button" href="/models?use_case={{ use_case.slug }}">Open matching provider routes</a></p>
+{% endblock %}

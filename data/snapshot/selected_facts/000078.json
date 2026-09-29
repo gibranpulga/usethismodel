@@ -780,7 +780,7 @@
 {"entity":"offering:9255","field":"vision","observation_id":103250},
 {"entity":"offering:9256","field":"cache_read_price","observation_id":103251},
 {"entity":"offering:9256","field":"context_window","observation_id":103252},
-{"entity":"offering:9256","field":"input_price","observation_id":103253},
+{"entity":"offering:9256","field":"input_price","observation_id":103929},
 {"entity":"offering:9256","field":"max_output_tokens","observation_id":103254},
 {"entity":"offering:9256","field":"output_price","observation_id":103255},
 {"entity":"offering:9256","field":"reasoning","observation_id":103256},

@@ -28,10 +28,11 @@ def canonical_model(db, provider_id: int | None, api_model_id: str):
     ).fetchone()
     if row:
         return row
-    return db.execute(
-        "SELECT * FROM models WHERE replace(lower(canonical_slug), '_', '-')=?",
-        (normalized,),
-    ).fetchone()
+    return next(
+        (row for row in db.execute("SELECT * FROM models WHERE canonical_slug IS NOT NULL")
+         if normalize_model_id(row["canonical_slug"]) == normalized),
+        None,
+    )
 
 
 def compatibility_for(db, harness_id: int, offering_id: int, mcp_workflow: bool = False):
@@ -51,15 +52,14 @@ def compatibility_for(db, harness_id: int, offering_id: int, mcp_workflow: bool 
 
     override = db.execute(
         """SELECT * FROM harness_model_overrides WHERE harness_id=?
-           AND (offering_id=? OR model_id=?) ORDER BY offering_id IS NOT NULL DESC LIMIT 1""",
+           AND (offering_id=? OR (offering_id IS NULL AND model_id=?))
+           ORDER BY offering_id IS NOT NULL DESC LIMIT 1""",
         (harness_id, offering_id, offering["model_id"]),
     ).fetchone()
-    if override:
-        return {
-            "status": override["status"],
-            "confidence": "HIGH",
-            "explanation": override["reason"],
-        }
+    # An explicit model/route result is authoritative for ordinary compatibility,
+    # but cannot manufacture MCP support in a harness that lacks it.
+    if override and not mcp_workflow:
+        return {"status": override["status"], "confidence": "HIGH", "explanation": override["reason"]}
     provider = db.execute(
         "SELECT * FROM harness_provider_compatibility WHERE harness_id=? AND provider_id=?",
         (harness_id, offering["provider_id"]),
@@ -90,6 +90,8 @@ def compatibility_for(db, harness_id: int, offering_id: int, mcp_workflow: bool 
             "confidence": "MEDIUM",
             "explanation": "The workflow requires MCP but harness MCP support is not documented as available.",
         }
+    if override:
+        return {"status": override["status"], "confidence": "HIGH", "explanation": override["reason"]}
     if offering["tool_support"] == UNKNOWN:
         return {
             "status": "PARTIAL",
@@ -101,4 +103,4 @@ def compatibility_for(db, harness_id: int, offering_id: int, mcp_workflow: bool 
     bits = [f"Provider support: {mode.replace('_', ' ').title()}", "Tool calling: Yes"]
     if mcp_workflow:
         bits.append("Harness MCP: Yes")
-    return {"status": status, "confidence": "HIGH", "explanation": ". ".join(bits) + "."}
+    return {"status": status, "confidence": "MEDIUM", "explanation": ". ".join(bits) + ". No route-specific reliability test is recorded."}

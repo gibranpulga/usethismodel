@@ -1,10 +1,12 @@
 import os
+import secrets
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, render_template, request
+from flask import Flask, abort, g, jsonify, redirect, render_template, request, url_for
 
 from .db import init_db
 from .domain import compatibility_for
+from .public import public, slugify
 from .query import (
     filter_options,
     interpret_search,
@@ -33,15 +35,40 @@ def create_app(test_config=None):
         app.config.update(test_config)
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     init_db(app)
+    app.register_blueprint(public)
+    app.jinja_env.globals["slugify"] = slugify
+
+    @app.before_request
+    def content_security_nonce():
+        g.csp_nonce = secrets.token_urlsafe(16)
     if app.config.get("APPLY_DATA_SNAPSHOT", not app.config.get("TESTING", False)):
         from .data_snapshot import apply_snapshot
         from .db import get_db
         with app.app_context():
             apply_snapshot(get_db(), Path(__file__).resolve().parent.parent / "data" / "catalog.json")
 
+    @app.after_request
+    def security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        response.headers.setdefault("Content-Security-Policy", f"default-src 'self'; style-src 'self'; script-src 'self' 'nonce-{g.csp_nonce}'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
+        if request.is_secure:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
     @app.context_processor
     def navigation():
-        return {"nav": NAV, "current_path": request.path, "presets": PRESETS}
+        canonical = request.url_root.rstrip("/") + request.path
+        return {
+            "nav": NAV,
+            "current_path": request.path,
+            "presets": PRESETS,
+            "canonical_url": canonical,
+            "meta_description": "Compare AI models by exact provider route, current price, capabilities, harness compatibility, sources, and verification date.",
+            "robots_meta": "noindex,follow" if request.args else "index,follow",
+            "csp_nonce": g.csp_nonce,
+        }
 
     def db():
         from .db import get_db
@@ -92,7 +119,26 @@ def create_app(test_config=None):
     @app.get("/")
     def home():
         filters, interpreted = interpreted_filters()
-        return render_template("index.html", title="Route finder", filters=filters, interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters)[:6])
+        latest = route_rows(db(), {"release": "week", "sort": "newest", "limit": 6})
+        popular = rows("""SELECT m.id,m.canonical_name,m.canonical_slug,COUNT(o.id) route_count
+          FROM models m JOIN provider_offerings o ON o.model_id=m.id GROUP BY m.id
+          ORDER BY route_count DESC,m.canonical_name LIMIT 6""")
+        changes = rows("""SELECT o.id offering_id,m.canonical_name,p.name provider_name,pr.price_type,
+          pr.amount,pr.unit,pr.valid_from FROM pricing_records pr
+          JOIN provider_offerings o ON o.id=pr.offering_id JOIN models m ON m.id=o.model_id
+          JOIN providers p ON p.id=o.provider_id WHERE pr.valid_until IS NULL AND EXISTS(
+            SELECT 1 FROM pricing_records old WHERE old.offering_id=pr.offering_id
+            AND old.price_type=pr.price_type AND old.id!=pr.id)
+          ORDER BY pr.valid_from DESC LIMIT 6""")
+        return render_template(
+            "index.html", title="AI model, provider route & harness finder", filters=filters,
+            interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters)[:6],
+            deals=offer_rows(db())[:4], latest=latest, popular=popular,
+            coding=route_rows(db(), {"tools": "1", "use_case": "coding", "sort": "value", "limit": 6}),
+            home_harnesses=rows("SELECT id,name,interfaces,supports_mcp FROM harnesses ORDER BY supports_mcp DESC,name LIMIT 6"),
+            media_routes=route_rows(db(), {"type": "3D generation", "limit": 6}), changes=changes,
+            meta_description="Find current AI model routes, deals, new releases, coding models, harness compatibility, and 3D generation APIs from source-backed data.",
+        )
 
     @app.get("/models")
     def models():
@@ -104,6 +150,14 @@ def create_app(test_config=None):
         model = db().execute("SELECT m.*,l.name lab_name FROM models m LEFT JOIN labs l ON l.id=m.lab_id WHERE m.id=?", (model_id,)).fetchone()
         if not model:
             abort(404)
+        return redirect(url_for("model_detail_slug", model_slug=model["canonical_slug"]), code=301)
+
+    @app.get("/models/<path:model_slug>")
+    def model_detail_slug(model_slug):
+        model = db().execute("SELECT m.*,l.name lab_name FROM models m LEFT JOIN labs l ON l.id=m.lab_id WHERE m.canonical_slug=?", (model_slug,)).fetchone()
+        if not model:
+            abort(404)
+        model_id = model["id"]
         offerings = route_rows(db(), {"model_id": model_id, "limit": 250})
         use_cases = rows("SELECT u.name,mus.classification,mus.rationale,mus.confidence FROM model_use_case_scores mus JOIN use_cases u ON u.id=mus.use_case_id WHERE mus.model_id=? ORDER BY u.name", (model_id,))
         benchmarks = rows("SELECT b.name,b.version,br.score,br.metric,br.confidence FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id WHERE br.model_id=? ORDER BY b.name", (model_id,))
@@ -114,16 +168,29 @@ def create_app(test_config=None):
             if supported:
                 harnesses.append({"name": harness["name"], **supported[0]})
         media = db().execute("SELECT * FROM model_media_features WHERE model_id=?", (model_id,)).fetchone()
-        return render_template("model_detail.html", title=model["canonical_name"], item=dict(model), offerings=offerings, use_cases=use_cases, benchmarks=benchmarks, harnesses=harnesses, media=dict(media) if media else None, sources=source_rows(db(), model_id=model_id))
+        verified = max([o["fetched_at"] for o in offerings if o["fetched_at"]] + ([media["last_verified_at"]] if media and media["last_verified_at"] else []), default=None)
+        return render_template("model_detail.html", title=f"{model['canonical_name']} prices, providers & compatibility", item=dict(model), offerings=offerings, use_cases=use_cases, benchmarks=benchmarks, harnesses=harnesses, media=dict(media) if media else None, sources=source_rows(db(), model_id=model_id), last_verified_at=verified, canonical_url=request.url_root.rstrip('/') + url_for('model_detail_slug', model_slug=model_slug), meta_description=f"{model['canonical_name']} provider routes, current pricing, limits, tool support, benchmarks, harness compatibility, sources, and verification dates.")
 
     @app.get("/routes/<int:offering_id>")
     def route_detail(offering_id):
         route = next(iter(route_rows(db(), {"offering_id": offering_id})), None)
         if not route:
             abort(404)
+        return redirect(url_for("route_detail_slug", provider_slug=slugify(route["provider_name"]), api_model_id=route["api_model_id"]), code=301)
+
+    @app.get("/routes/<provider_slug>/<path:api_model_id>")
+    def route_detail_slug(provider_slug, api_model_id):
+        provider = next((p for p in rows("SELECT id,name FROM providers") if slugify(p["name"]) == provider_slug), None)
+        if not provider:
+            abort(404)
+        offering = db().execute("SELECT id FROM provider_offerings WHERE provider_id=? AND api_model_id=?", (provider["id"], api_model_id)).fetchone()
+        if not offering:
+            abort(404)
+        offering_id = offering["id"]
+        route = next(iter(route_rows(db(), {"offering_id": offering_id})), None)
         peers = route_rows(db(), {"model_id": route["model_id"], "limit": 250})
         offers = [o for o in offer_rows(db(), include_expired=True) if o["offering_id"] in (None, offering_id) and o["provider_id"] == route["provider_id"]]
-        return render_template("route_detail.html", title=f"{route['canonical_name']} via {route['provider_name']}", route=route, history=price_history(db(), offering_id), peers=peers, offers=offers, sources=source_rows(db(), offering_id=offering_id))
+        return render_template("route_detail.html", title=f"{route['canonical_name']} via {route['provider_name']}", route=route, history=price_history(db(), offering_id), peers=peers, offers=offers, sources=source_rows(db(), offering_id=offering_id), canonical_url=request.url_root.rstrip('/') + request.path, meta_description=f"Current {route['canonical_name']} pricing, limits, tool support, offers, price history, and sources for the {route['provider_name']} route.")
 
     @app.get("/providers")
     def providers():
@@ -135,8 +202,20 @@ def create_app(test_config=None):
         provider = db().execute("SELECT * FROM providers WHERE id=?", (provider_id,)).fetchone()
         if not provider:
             abort(404)
+        return redirect(url_for("provider_detail_slug", provider_slug=slugify(provider["name"])), code=301)
+
+    @app.get("/providers/<provider_slug>")
+    def provider_detail_slug(provider_slug):
+        provider = next((p for p in rows("SELECT * FROM providers") if slugify(p["name"]) == provider_slug), None)
+        if not provider:
+            abort(404)
+        provider_id = provider["id"]
         routes = route_rows(db(), {"provider_id": provider_id, "limit": 250})
-        return render_template("provider_detail.html", title=provider["name"], provider=provider, routes=routes, plans=rows("SELECT * FROM plans WHERE provider_id=?", (provider_id,)), offers=rows("SELECT * FROM offers WHERE provider_id=? ORDER BY status,ends_at", (provider_id,)), sources=source_rows(db(), offering_id=routes[0]["offering_id"]) if routes else [])
+        sources = rows("""SELECT DISTINCT s.name,s.url,s.reliability,s.fetched_at FROM sources s WHERE s.id IN (
+          SELECT source_id FROM provider_offerings WHERE provider_id=? UNION SELECT source_id FROM plans WHERE provider_id=?
+          UNION SELECT source_id FROM offers WHERE provider_id=?) ORDER BY s.reliability,s.name""", (provider_id, provider_id, provider_id))
+        verified = max([r["fetched_at"] for r in routes if r["fetched_at"]] + [s["fetched_at"] for s in sources if s["fetched_at"]], default=None)
+        return render_template("provider_detail.html", title=f"{provider['name']} AI models, pricing & routes", provider=provider, routes=routes, plans=rows("SELECT * FROM plans WHERE provider_id=?", (provider_id,)), offers=rows("SELECT * FROM offers WHERE provider_id=? ORDER BY status,ends_at", (provider_id,)), sources=sources, last_verified_at=verified, canonical_url=request.url_root.rstrip('/') + url_for('provider_detail_slug', provider_slug=provider_slug), meta_description=f"Documented {provider['name']} AI model routes, current prices, limits, offers, sources, and last verification dates.")
 
     @app.get("/harnesses")
     def harnesses():
@@ -147,13 +226,25 @@ def create_app(test_config=None):
         harness = db().execute("SELECT * FROM harnesses WHERE id=?", (harness_id,)).fetchone()
         if not harness:
             abort(404)
+        return redirect(url_for("harness_detail_slug", harness_slug=slugify(harness["name"])), code=301)
+
+    @app.get("/harnesses/<harness_slug>")
+    def harness_detail_slug(harness_slug):
+        harness = next((h for h in rows("SELECT * FROM harnesses") if slugify(h["name"]) == harness_slug), None)
+        if not harness:
+            abort(404)
+        harness_id = harness["id"]
         capabilities = rows("SELECT transport,state,note FROM harness_mcp_capabilities WHERE harness_id=?", (harness_id,))
         routes = []
         for route in route_rows(db()):
             match = compatibility_for(db(), harness_id, route["offering_id"])
             if match["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}:
                 routes.append({**route, "compatibility": match})
-        return render_template("harness_detail.html", title=harness["name"], item=dict(harness), capabilities=capabilities, routes=routes)
+        sources = rows("""SELECT DISTINCT s.name,s.url,s.reliability,s.fetched_at FROM sources s WHERE s.id IN (
+          SELECT source_id FROM harnesses WHERE id=? UNION SELECT source_id FROM harness_mcp_capabilities WHERE harness_id=?
+          UNION SELECT source_id FROM harness_provider_compatibility WHERE harness_id=?) ORDER BY s.name""", (harness_id, harness_id, harness_id))
+        verified = max([s["fetched_at"] for s in sources if s["fetched_at"]], default=None)
+        return render_template("harness_detail.html", title=f"{harness['name']} providers, models & MCP compatibility", item=dict(harness), capabilities=capabilities, routes=routes, sources=sources, last_verified_at=verified, canonical_url=request.url_root.rstrip('/') + url_for('harness_detail_slug', harness_slug=harness_slug), meta_description=f"Documented {harness['name']} provider integrations, model-route compatibility, MCP capabilities, sources, and caveats.")
 
     @app.get("/compatibility")
     def compatibility():
@@ -176,9 +267,14 @@ def create_app(test_config=None):
     @app.get("/calculator")
     def calculator():
         filters = finder_filters()
-        input_tokens = int(request.args.get("input_tokens", 1_000_000) or 0)
-        output_tokens = int(request.args.get("output_tokens", 250_000) or 0)
-        cache_share = min(100, max(0, int(request.args.get("cache_share", 0) or 0))) / 100
+        def bounded_int(name, default, maximum=10_000_000_000):
+            try:
+                return min(maximum, max(0, int(request.args.get(name, default) or 0)))
+            except (TypeError, ValueError):
+                return default
+        input_tokens = bounded_int("input_tokens", 1_000_000)
+        output_tokens = bounded_int("output_tokens", 250_000)
+        cache_share = min(100, bounded_int("cache_share", 0, 100)) / 100
         batch = request.args.get("batch") == "1"
         calculated = []
         for route in compatible_routes(filters):
@@ -216,5 +312,27 @@ def create_app(test_config=None):
     @app.get("/use-cases")
     def use_cases():
         return render_template("use_cases.html", title="Use cases", use_cases=filter_options(db())["use_cases"])
+
+    @app.get("/benchmarks/<benchmark_slug>")
+    def benchmark_detail(benchmark_slug):
+        benchmark = next((b for b in rows("SELECT * FROM benchmarks") if slugify(f"{b['name']}-{b['version']}") == benchmark_slug), None)
+        if not benchmark:
+            abort(404)
+        results = rows("""SELECT m.canonical_name,m.canonical_slug,br.*,s.name source_name,s.url source_url
+          FROM benchmark_results br JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
+          WHERE br.benchmark_id=? ORDER BY br.score DESC""", (benchmark["id"],))
+        source = db().execute("SELECT * FROM sources WHERE id=?", (benchmark["source_id"],)).fetchone() if benchmark["source_id"] else None
+        return render_template("benchmark_detail.html", title=f"{benchmark['name']} {benchmark['version']} benchmark", benchmark=benchmark, results=results, source=source, canonical_url=request.url_root.rstrip('/') + request.path, meta_description=f"{benchmark['name']} {benchmark['version']} methodology, metric-specific results, harness details, sources, and caveats.")
+
+    @app.get("/use-cases/<use_case_slug>")
+    def use_case_detail(use_case_slug):
+        use_case = db().execute("SELECT * FROM use_cases WHERE slug=?", (use_case_slug,)).fetchone()
+        if not use_case:
+            abort(404)
+        scores = rows("""SELECT m.canonical_name,m.canonical_slug,mus.classification,mus.confidence,mus.rationale,
+          s.name source_name,s.url source_url,s.fetched_at FROM model_use_case_scores mus JOIN models m ON m.id=mus.model_id
+          LEFT JOIN sources s ON s.id=mus.source_id WHERE mus.use_case_id=?
+          ORDER BY CASE mus.classification WHEN 'RECOMMENDED' THEN 0 WHEN 'SUPPORTED' THEN 1 ELSE 2 END,m.canonical_name""", (use_case["id"],))
+        return render_template("use_case_detail.html", title=f"AI models for {use_case['name']}", use_case=use_case, scores=scores, canonical_url=request.url_root.rstrip('/') + request.path, meta_description=f"Source-backed AI model routes for {use_case['name']}, with classifications, rationale, confidence, provider links, and verification dates.")
 
     return app

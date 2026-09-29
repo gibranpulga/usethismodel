@@ -113,6 +113,16 @@ def test_openrouter_absent_parameters_are_unknown():
     assert record["fields"] == {}
 
 
+def test_gateway_vendor_ids_share_canonical_identity_and_route_suffixes_do_not_split():
+    gateway = parse_models_dev({"gateway": {"models": {"openai/gpt-next": {}}}})[0]
+    router = parse_openrouter(openrouter({"id": "openai/gpt-next:batch"}))[0]
+    lite = parse_litellm({"openrouter/openai/gpt-next:batch": {
+        "litellm_provider": "openrouter", "mode": "chat"}})[0]
+    assert gateway["canonical_slug"] == "openai/gpt-next"
+    assert router["canonical_slug"] == "openai/gpt-next"
+    assert lite["canonical_slug"] == "openai/gpt-next"
+
+
 @pytest.mark.parametrize("value", ["NaN", "Infinity", True, "bad"])
 def test_invalid_prices_reject_snapshot(value):
     with pytest.raises(ValueError):
