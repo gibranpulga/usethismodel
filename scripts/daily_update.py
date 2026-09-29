@@ -153,6 +153,9 @@ class Runner:
             self.run(args, cwd=self.work)
             self.archive_reports()
             self.checks()
+            if self.dry_run:
+                logging.info("Dry run complete; no artifacts or commits")
+                return
             self.git("add", "--", "data", cwd=self.work)
             paths = self.git("diff", "--cached", "--name-only", cwd=self.work).splitlines()
             if self.dry_run or not meaningful_data_changes(paths):
