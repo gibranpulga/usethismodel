@@ -334,3 +334,46 @@ def test_small_listing_removals_queue_expiry_review_without_erasing_prices(db):
     report = run(db, [record(api_id=f'model-{i}') for i in range(11)], LATER)
     assert prices(db, route(db, 'model-11')['id'])['INPUT'] == 2
     assert any(r['field'] == 'listing removed' for r in report['Manual-review items'])
+
+
+def test_snapshot_replacement_avoids_quadratic_foreign_key_scans(db, tmp_path):
+    # Production has 100k observations. Deleting parents before their selections
+    # made a second deployment exceed health-check timeouts despite valid data.
+    with db:
+        for ident in range(1, 1501):
+            db.execute("INSERT INTO data_observations(id,entity,field,source,source_url,value_json,priority,observed_at,evidence) VALUES(?,?,'test','test','https://example.test','1',60,?,'fixture')", (ident, f'fixture:{ident}', NOW))
+            db.execute("INSERT INTO selected_facts VALUES(?,'test',?)", (f'fixture:{ident}', ident))
+    path = tmp_path / 'snapshot.json'
+    path.write_text(encode(snapshot(db)))
+    calls = 0
+
+    def budget():
+        nonlocal calls
+        calls += 1
+        return int(calls > 200)
+
+    db.set_progress_handler(budget, 10000)
+    try:
+        apply_snapshot(db, path)
+    finally:
+        db.set_progress_handler(None, 0)
+    assert db.execute('SELECT count(*) FROM selected_facts').fetchone()[0] == 1500
+
+
+def test_published_snapshot_is_reconciled_before_new_fetch(db, tmp_path, monkeypatch):
+    import sys
+
+    from app.data_update import main
+
+    report = run(db, [record()])
+    base = tmp_path / 'published'
+    write_outputs(db, report, base, NOW)
+    oid = route(db)['id']
+    with db:
+        db.execute("UPDATE pricing_records SET amount=99 WHERE offering_id=? AND price_type='INPUT'", (oid,))
+    database = db.execute('PRAGMA database_list').fetchone()[2]
+    monkeypatch.setattr('app.update_sources.fetch_sources', lambda: ([record(fields={})], [], {}))
+    monkeypatch.setattr('app.update_sources.fetch_harness_changes', lambda: ([], [], {}))
+    monkeypatch.setattr(sys, 'argv', ['data_update', 'update', '--database', database, '--base-snapshot', str(base / 'catalog.json'), '--output-dir', str(tmp_path / 'updated')])
+    main()
+    assert prices(db, oid)['INPUT'] == 2

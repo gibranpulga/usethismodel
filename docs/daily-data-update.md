@@ -2,7 +2,8 @@
 
 The server runs `scripts/daily-update.sh` as the `deploy` user. It takes a
 nonblocking `flock` for the whole refresh, creates a consistent SQLite backup,
-updates a private staging database and Git worktree, validates the data, runs
+reconciles the latest published snapshot into a private staging database, updates
+it in an isolated Git worktree, validates the data, runs
 pytest and Ruff, and pushes a data-only commit to `main`. An explicit deploy-only Coolify API call
 builds that commit; application startup applies its
 versioned catalog snapshot to the persistent database.
@@ -92,6 +93,9 @@ rotates at 2 MiB with two retained segments; logs are capped at 90 files and
 files and 30 days. State files and directories are private to `deploy`.
 Backups are the live pre-refresh database; `staged.sqlite3` is the candidate.
 The job never restores a backup automatically and never overwrites the live DB.
+Before fetching, `--base-snapshot data/catalog.json` applies the latest published
+Git snapshot to staging. This preserves already-published observations if the
+previous deployment failed or has not reached the live volume yet.
 
 Every invocation also writes a sanitized status report in `state/reports/`.
 New or changed source reports are copied there before temporary work is removed,

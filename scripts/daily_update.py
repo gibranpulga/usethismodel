@@ -158,6 +158,8 @@ class Runner:
             retain(backup_path.parent)
             shutil.copy2(backup_path, self.database)
             args = [self.python, "-m", "app.data_update", "update", "--database", str(self.database), "--output-dir", "data"]
+            if (self.work / "data/catalog.json").exists():
+                args.extend(["--base-snapshot", "data/catalog.json"])
             if self.dry_run:
                 args.append("--dry-run")
             self.phase = "source update"

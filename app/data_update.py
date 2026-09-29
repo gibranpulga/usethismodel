@@ -385,6 +385,7 @@ def main():
     parser.add_argument('--database', default=os.environ.get('DATABASE_PATH', 'instance/usethismodel.sqlite3'))
     parser.add_argument('--output-dir', default='data')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--base-snapshot', help='Reconcile this published snapshot into staging before fetching')
     args = parser.parse_args()
     from . import create_app
     from .db import get_db
@@ -403,6 +404,9 @@ def main():
             if args.command == 'validate':
                 print(encode(validate(db)))
                 return
+            if args.base_snapshot:
+                from .data_snapshot import apply_snapshot
+                apply_snapshot(db, args.base_snapshot)
             records, failures, manifests = fetch_sources()
             now = datetime.now(timezone.utc).isoformat(timespec='seconds')
             try:

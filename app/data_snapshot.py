@@ -10,6 +10,28 @@ def tables(db):
     return [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name") if r[0] not in EXCLUDED]
 
 
+def dependency_order(db):
+    """Parents first for insertion, children first for deletion (avoids FK scans)."""
+    names = tables(db)
+    ordered, visiting = [], set()
+
+    def visit(table):
+        if table in ordered:
+            return
+        if table in visiting:
+            raise ValueError('Cyclic snapshot foreign keys')
+        visiting.add(table)
+        parents = {row[2] for row in db.execute(f'PRAGMA foreign_key_list("{table}")')}
+        for parent in sorted(parents & set(names)):
+            visit(parent)
+        visiting.remove(table)
+        ordered.append(table)
+
+    for table in names:
+        visit(table)
+    return ordered
+
+
 def snapshot(db):
     return {'version': 1, 'tables': {t: [dict(r) for r in db.execute(f'SELECT * FROM "{t}" ORDER BY rowid')] for t in tables(db)}}
 
@@ -76,9 +98,11 @@ def apply_snapshot(db, path):
     db.execute('BEGIN')
     try:
         db.execute('PRAGMA defer_foreign_keys=ON')
-        for table in tables(db):
+        order = dependency_order(db)
+        for table in reversed(order):
             db.execute(f'DELETE FROM "{table}"')
-        for table, rows in data['tables'].items():
+        for table in order:
+            rows = data['tables'][table]
             allowed = {r[1] for r in db.execute(f'PRAGMA table_info("{table}")')}
             for row in rows:
                 if not set(row) <= allowed:
