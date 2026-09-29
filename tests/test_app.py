@@ -28,7 +28,7 @@ def test_database_initializes_all_migrations(app):
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
 
-    assert migrations == [(1,), (2,), (3,), (4,)]
+    assert migrations == [(1,), (2,), (3,), (4,), (5,)]
     assert {
         "models",
         "providers",
@@ -137,3 +137,21 @@ def test_unknown_and_provider_specific_override(app):
 def test_catalog_detail_pages(client):
     for path in ["/models/1", "/providers/1", "/harnesses/1"]:
         assert client.get(path).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "path,required",
+    [
+        ("/models?free=1&tools=1", b"No routes match"),
+        ("/models?harness=Hermes+Agent", b"GLM-5.3"),
+        ("/models?q=GLM&provider=OpenRouter", b"via OpenRouter"),
+        ("/models?context=1000000&tools=1", b"GLM-5.3"),
+        ("/compatibility?harness=OpenCode&mcp=1", b"Compatible"),
+        ("/compare?ids=1,2", b"Input / M"),
+        ("/calculator?input_tokens=1000000&output_tokens=250000", b"/month"),
+    ],
+)
+def test_finder_workflows_and_shared_filter_urls(client, path, required):
+    response = client.get(path)
+    assert response.status_code == 200
+    assert required in response.data
