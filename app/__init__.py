@@ -30,7 +30,7 @@ MORE_NAV = [("Compatibility", "/compatibility"), ("Plans", "/plans"),
             ("New Releases", "/new-releases"), ("Harnesses", "/harnesses"),
             ("Workflows", "/workflows"), ("Benchmarks", "/benchmarks"),
             ("Providers", "/providers"), ("Use Cases", "/use-cases"),
-            ("Rankings", "/rankings")]
+            ("Rankings", "/rankings"), ("MCP", "/mcp-info")]
 PRESETS = {
     "free-tools": ("Free + Tools", {"free": "1", "tools": "1"}), "cheap-agent": ("Cheapest Agent Models", {"tools": "1", "use_case": "agentic-coding"}),
     "strong-coding": ("Strong Coding", {"tools": "1", "use_case": "coding"}), "best-value-coding": ("Best Value Coding", {"tools": "1", "use_case": "coding", "sort": "value"}),
@@ -165,6 +165,14 @@ def create_app(test_config=None):
     def health():
         db().execute("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").fetchone()
         return jsonify(status="ok", database="sqlite")
+
+    @app.get("/mcp-info")
+    def mcp_info():
+        return render_template(
+            "mcp.html",
+            title="MCP server",
+            meta_description="Connect agents to UseThisModel's read-only, source-backed model route data over MCP.",
+        )
 
     @app.get("/")
     def home():

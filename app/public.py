@@ -342,7 +342,7 @@ def robots():
 @public.get("/sitemap.xml")
 def sitemap():
     root = request.url_root.rstrip("/")
-    urls = ["/", "/models", "/providers", "/harnesses", "/workflows", "/benchmarks", "/use-cases", "/offers", "/rankings", "/api"]
+    urls = ["/", "/models", "/providers", "/harnesses", "/workflows", "/benchmarks", "/use-cases", "/offers", "/rankings", "/api", "/mcp-info"]
     urls += ["/models/" + row[0] for row in get_db().execute("SELECT canonical_slug FROM models WHERE canonical_slug IS NOT NULL")]
     urls += ["/providers/" + slugify(row[0]) for row in get_db().execute("SELECT name FROM providers")]
     urls += ["/harnesses/" + slugify(row[0]) for row in get_db().execute("SELECT name FROM harnesses")]

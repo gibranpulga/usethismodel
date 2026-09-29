@@ -33,7 +33,66 @@ Open <http://127.0.0.1:8000>. SQLite initializes automatically at
 `instance/usethismodel.sqlite3` (or `DATABASE_PATH`). The health check is
 <http://127.0.0.1:8000/health>.
 
-For production-like local serving, run `gunicorn --bind 127.0.0.1:8000 wsgi:app`.
+For production-like website-only serving, run `gunicorn --bind 127.0.0.1:8000 wsgi:app`.
+
+## Read-only MCP server
+
+The same application exposes the catalogue as MCP at `/mcp`. It uses the existing
+SQLite database and query/domain layer; it does not copy data or expose SQL. The
+production endpoint is `https://usethismodel.codefiction.net/mcp` and its human
+documentation is at `/mcp-info`.
+
+Run the combined website and Streamable HTTP server locally:
+
+```sh
+uvicorn asgi:app --host 127.0.0.1 --port 8000
+```
+
+Or use local stdio transport:
+
+```sh
+python -m app.mcp_server
+```
+
+Remote client examples:
+
+```yaml
+# Hermes Agent: ~/.hermes/config.yaml
+mcp_servers:
+  usethismodel:
+    url: "https://usethismodel.codefiction.net/mcp"
+    trust: untrusted
+```
+
+```toml
+# Codex CLI: ~/.codex/config.toml
+[mcp_servers.usethismodel]
+url = "https://usethismodel.codefiction.net/mcp"
+```
+
+```jsonc
+// OpenCode v2: opencode.jsonc
+{"mcp":{"servers":{"usethismodel":{"type":"remote","url":"https://usethismodel.codefiction.net/mcp","oauth":false}}}}
+```
+
+```json
+// Pi: ~/.pi/agent/mcp.json or .pi/mcp.json
+{"mcpServers":{"usethismodel":{"url":"https://usethismodel.codefiction.net/mcp","exposure":"direct"}}}
+```
+
+For stdio, replace each remote URL declaration with the client's local command
+form invoking the repository environment's Python and `-m app.mcp_server`, with
+the repository as its working directory.
+
+All 16 tools are annotated read-only and return bounded, paginated results. They
+include canonical model identity, exact provider route, prices, capabilities,
+compatibility evidence, verification dates, and public sources where applicable.
+Static MCP resources summarize models, providers, harnesses, active offers, and
+benchmark metadata. `MCP_RATE_LIMIT_PER_MINUTE` controls per-client public HTTP
+rate protection (default 60; enforced per worker). The transport accepts request
+bodies up to 256 KiB. No tool schema or result includes application secrets,
+provider keys, process environment, private Git credentials, or private agent
+configuration.
 
 ## Verification
 

@@ -1,0 +1,16 @@
+pre {
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 13px;
+  color: var(--text);
+  font: 12px/1.5 ui-monospace, monospace;
+}
+
+code {
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+}
+
+pre code { color: inherit; }

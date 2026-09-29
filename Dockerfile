@@ -8,4 +8,4 @@ RUN mkdir -p /data && chown -R 10001:10001 /app /data
 USER 10001
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=10s --start-period=15s --retries=5 CMD ["python", "/app/healthcheck.py"]
-CMD ["sh", "-c", "exec gunicorn --preload --bind 0.0.0.0:${PORT} --workers 2 --access-logfile - --error-logfile - wsgi:app"]
+CMD ["sh", "-c", "exec gunicorn --preload --bind 0.0.0.0:${PORT} --workers 2 --worker-class uvicorn.workers.UvicornWorker --access-logfile - --error-logfile - asgi:app"]

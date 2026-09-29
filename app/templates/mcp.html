@@ -1,0 +1,49 @@
+{% extends "placeholder.html" %}
+{% block structured_data %}<link rel="stylesheet" href="{{ url_for('static', filename='mcp.css') }}">{% endblock %}
+{% block content %}
+<section class="page-intro"><div class="eyebrow">READ-ONLY AGENT ACCESS</div><h1>UseThisModel MCP</h1><p>Give Hermes, Codex, OpenCode, Pi, and other MCP clients compact, source-backed answers about exact model routes, prices, capabilities, compatibility, deals, releases, benchmarks, and plans.</p></section>
+<section class="setup-callout"><div><div class="eyebrow">REMOTE STREAMABLE HTTP</div><h2><code>https://usethismodel.codefiction.net/mcp</code></h2><p>Public catalogue data only. No API key is required.</p></div></section>
+<section class="section-head"><div><div class="eyebrow">TOOLS</div><h2>Questions, not database access</h2></div></section>
+<div class="simple-grid">
+  <div class="data-tile"><strong>Find</strong><span><code>search_models</code>, <code>search_provider_routes</code>, <code>find_cheapest_routes</code>, <code>find_free_models</code>, <code>find_tool_capable_models</code></span></div>
+  <div class="data-tile"><strong>Match</strong><span><code>find_models_for_harness</code>, <code>find_models_for_workflow</code>, <code>get_compatibility</code></span></div>
+  <div class="data-tile"><strong>Inspect</strong><span><code>get_model</code>, <code>compare_models</code>, <code>compare_routes</code>, <code>get_current_deals</code>, <code>get_new_releases</code>, <code>get_benchmarks</code>, <code>get_plan_options</code>, <code>calculate_cost</code></span></div>
+</div>
+<p class="method-note">Every tool is annotated read-only. Lists accept a limit and cursor, and results retain explicit unknowns, verification dates, and source URLs.</p>
+<section class="section-head"><div><div class="eyebrow">CONNECT</div><h2>Current client formats</h2></div></section>
+<div class="detail-columns">
+  <div><h3>Hermes Agent</h3><p>Add to <code>~/.hermes/config.yaml</code>, then run <code>/reload-mcp</code>.</p><pre><code>mcp_servers:
+  usethismodel:
+    url: "https://usethismodel.codefiction.net/mcp"
+    trust: untrusted
+    tools:
+      resources: true</code></pre></div>
+  <div><h3>Codex CLI</h3><p>Use the CLI, or add the equivalent <code>[mcp_servers.usethismodel]</code> entry to <code>~/.codex/config.toml</code>.</p><pre><code>codex mcp add usethismodel \
+  --url https://usethismodel.codefiction.net/mcp</code></pre></div>
+  <div><h3>OpenCode v2</h3><p>Add to <code>opencode.jsonc</code>. This public server does not use OAuth.</p><pre><code>{
+  "mcp": { "servers": {
+    "usethismodel": {
+      "type": "remote",
+      "url": "https://usethismodel.codefiction.net/mcp",
+      "oauth": false
+    }
+  }}
+}</code></pre></div>
+  <div><h3>Pi</h3><p>Add to <code>~/.pi/agent/mcp.json</code> or project <code>.pi/mcp.json</code>, then run <code>pi mcp list</code>.</p><pre><code>{
+  "mcpServers": {
+    "usethismodel": {
+      "url": "https://usethismodel.codefiction.net/mcp",
+      "exposure": "direct"
+    }
+  }
+}</code></pre></div>
+</div>
+<section class="section-head"><div><div class="eyebrow">TRY IT</div><h2>Example questions</h2></div></section>
+<ul class="source-list">
+  <li>Find the cheapest currently verified tool-capable model route compatible with Hermes and at least 500K context.</li>
+  <li>Find free models with tools.</li><li>Compare GLM and DeepSeek for OpenCode.</li>
+  <li>What model works with Unreal MCP?</li><li>What current deals exist?</li><li>What new models launched this week?</li>
+</ul>
+<section class="section-head"><div><div class="eyebrow">PRIVACY &amp; SECURITY</div><h2>Bounded public catalogue</h2></div></section>
+<p class="method-note">The server cannot write catalogue data and exposes no database query tool. It returns only public model, provider, offer, benchmark, plan, and compatibility records. Application secrets, provider API keys, environment variables, Git credentials, and private Hermes configuration are outside every schema and response. The public transport validates inputs, caps result sizes and request bodies, and applies per-client rate protection.</p>
+{% endblock %}

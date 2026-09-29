@@ -123,6 +123,7 @@ def test_calculator_compares_without_inventing_break_even(client, app):
         "/calculator",
         "/rankings",
         "/my-setup",
+        "/mcp-info",
     ],
 )
 def test_foundation_sections_are_available(client, path):
