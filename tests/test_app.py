@@ -264,6 +264,14 @@ def test_public_api_contract_and_filters(client):
     assert client.post("/api/v1/models").status_code == 405
 
 
+def test_api_applies_harness_compatibility_before_result_limit(client):
+    response = client.get("/api/v1/search?q=cheap+tools&harness=hermes-agent&limit=1")
+    assert response.status_code == 200
+    assert response.json["meta"]["count"] == 1
+    assert response.json["data"][0]["compatibility"]["status"] in {
+        "COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}
+
+
 def test_public_api_resources_and_slug_detail(client):
     for path in ["/api/v1", "/api/v1/providers", "/api/v1/harnesses", "/api/v1/offers",
                  "/api/v1/releases", "/api/v1/benchmarks"]:

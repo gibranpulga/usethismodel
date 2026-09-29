@@ -123,21 +123,26 @@ def filtered_routes(args):
     if filters.get("harness") and not harness:
         return [], filters
     filters.pop("harness", None)
-    candidates = route_rows(get_db(), filters)
+    try:
+        requested_limit = min(250, max(1, int(filters.get("limit", 100))))
+    except (TypeError, ValueError):
+        requested_limit = 100
+    needs_compatibility = bool(harness or filters.get("mcp") == "1")
+    candidates = route_rows(get_db(), {**filters, "limit": 10_000} if needs_compatibility else filters)
     if not harness and filters.get("mcp") == "1":
         # MCP is a workflow property: require at least one documented MCP harness route.
         mcp_harnesses = get_db().execute("SELECT id FROM harnesses WHERE supports_mcp=1").fetchall()
         return [row for row in candidates if any(
             compatibility_for(get_db(), h["id"], row["offering_id"], True)["status"]
             in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}
-            for h in mcp_harnesses)], filters
+            for h in mcp_harnesses)][:requested_limit], filters
     if harness:
         kept = []
         for row in candidates:
             match = compatibility_for(get_db(), harness["id"], row["offering_id"], filters.get("mcp") == "1")
             if match["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}:
                 kept.append({**row, "_compatibility": match})
-        return kept, filters
+        return kept[:requested_limit], filters
     return candidates, filters
 
 
