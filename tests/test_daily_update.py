@@ -90,3 +90,40 @@ def test_report_archive_survives_no_commit(scheduler, tmp_path):
     runner.git = lambda *args, **kwargs: "?? data/reports/refresh.md"
     runner.archive_reports()
     assert (runner.report_dir / "refresh.md").read_text() == "No changes today"
+
+
+def test_deploy_secret_requires_private_permissions(scheduler, tmp_path):
+    helper = sys.modules['trigger_deploy']
+    path = tmp_path / 'coolify-deploy.json'
+    path.write_text('{"token":"secret"}')
+    path.chmod(0o644)
+    with pytest.raises(ValueError, match='0600'):
+        helper.trigger(path)
+
+
+def test_deploy_credential_is_only_in_authorization_header(scheduler, tmp_path, monkeypatch):
+    helper = sys.modules['trigger_deploy']
+    path = tmp_path / 'coolify-deploy.json'
+    path.write_text('{"token":"test-secret"}')
+    path.chmod(0o600)
+    seen = []
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            return b'{"deployments":[{"deployment_uuid":"verified"}]}'
+
+    def opened(request, **kwargs):
+        seen.append(request)
+        return Reply()
+
+    monkeypatch.setattr(helper, 'urlopen', opened)
+    assert helper.trigger(path) == 'verified'
+    assert seen[0].get_header('Authorization') == 'Bearer test-secret'
+    assert 'secret' not in seen[0].full_url
+    assert json.loads(seen[0].data) == {'uuid': helper.APP, 'force': False}

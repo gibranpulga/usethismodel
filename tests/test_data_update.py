@@ -277,3 +277,15 @@ def test_dry_run_never_changes_database_or_artifacts(db, tmp_path, monkeypatch):
     main()
     assert hashlib.sha256(open(database, 'rb').read()).hexdigest() == before
     assert not output.exists()
+
+
+def test_invalid_preexisting_import_data_is_preserved_as_quarantined_evidence(db):
+    with db:
+        oid = db.execute('SELECT id FROM provider_offerings LIMIT 1').fetchone()[0]
+        db.execute("INSERT INTO pricing_records(offering_id,price_type,amount) VALUES(?,'INPUT',-1000000)", (oid,))
+        db.execute('UPDATE provider_offerings SET context_limit=0 WHERE id=?', (oid,))
+    report = run(db, [record()])
+    assert not db.execute('SELECT 1 FROM pricing_records WHERE amount<0').fetchone()
+    assert db.execute('SELECT context_limit FROM provider_offerings WHERE id=?', (oid,)).fetchone()[0] is None
+    assert db.execute('SELECT 1 FROM data_observations WHERE value_json=? AND accepted=0', ('-1000000',)).fetchone()
+    assert any('Legacy invalid price' in item['reason'] for item in report['Manual-review items'])

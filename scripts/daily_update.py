@@ -13,6 +13,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from live_db_backup import backup
+from trigger_deploy import trigger
 
 AUTOMATION_TRAILER = "UseThisModel-Automation: daily-refresh-v1"
 ALLOWED_REMOTES = {
@@ -111,7 +112,9 @@ class Runner:
             self.phase = "GitHub push"
             self.git("push", "origin", f"{commit}:refs/heads/main")
         self.git("merge", "--ff-only", commit)
-        logging.info("Published %s; Coolify automatic deployment follows the GitHub push", commit)
+        self.phase = "Coolify deployment trigger"
+        deployment = trigger(self.state / "coolify-deploy.json")
+        logging.info("Published %s; Coolify deployment %s triggered", commit, deployment)
         self.cleanup()
 
     def execute(self):

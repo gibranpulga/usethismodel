@@ -3,8 +3,8 @@
 The server runs `scripts/daily-update.sh` as the `deploy` user. It takes a
 nonblocking `flock` for the whole refresh, creates a consistent SQLite backup,
 updates a private staging database and Git worktree, validates the data, runs
-pytest and Ruff, and pushes a data-only commit to `main`. Coolify's GitHub
-automatic deployment builds that commit; application startup applies its
+pytest and Ruff, and pushes a data-only commit to `main`. An explicit deploy-only Coolify API call
+builds that commit; application startup applies its
 versioned catalog snapshot to the persistent database.
 
 Production database writes happen only in application startup after deployment.
@@ -30,8 +30,14 @@ a deployment overlap safely postpones the refresh if the choice is ambiguous.
 The account needs Git, Python 3.12+, `flock`, Docker group access, and an SSH
 credential authorized to push this repository. The SSH host key must already be
 verified and known. Git is noninteractive (`BatchMode=yes`); authentication
-failures stop the run. Do not embed tokens in the remote URL or cron entry. No
-Coolify API secret is needed because pushing `main` triggers automatic deployment.
+failures stop the run. Do not embed tokens in the remote URL or cron entry. The deploy-only Coolify credential is stored at `state/coolify-deploy.json` with
+mode 0600. It is loaded by the Python helper, sent only in an Authorization header
+to the local API, and never enters command arguments, Git, reports or logs. The
+helper hardcodes the UseThisModel application UUID. Coolify tokens are team-scoped;
+this token has only the deploy ability, without read/write/root/sensitive access.
+It has no automatic expiry; rotate it deliberately and replace the private file.
+An explicit trigger is required because the configured auto-deploy setting did
+not produce deployments during verification.
 
 Provision once as `deploy` after preparing its GitHub authentication:
 
@@ -94,7 +100,7 @@ available even when no Git commit was needed. Raw subprocess output is not logge
 because network errors can contain credentials or response data; failure reports
 identify the failed phase and exception type without copying those values.
 
-After a push, verify the matching Coolify deployment and HTTPS health check;
+After a push and explicit API trigger, verify the matching Coolify deployment and HTTPS health check;
 the scheduler records publication success, not asynchronous deployment success.
 If the deployed app fails, use Coolify rollback and investigate logs. Retain the
 matching pre-refresh SQLite backup for operator-directed recovery if needed.

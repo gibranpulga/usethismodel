@@ -67,21 +67,47 @@ def observe(db, entity, field, source, url, source_id, value, now, accepted=True
     return db.execute('SELECT id FROM data_observations WHERE entity=? AND field=? AND source=? AND value_json=? AND observed_at=?', (entity, field, source, raw, now)).fetchone()[0]
 
 
+def quarantine_legacy(db, report, now):
+    for row in db.execute('SELECT pr.*,s.url,s.source_type FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id').fetchall():
+        if valid_value('input_price', row['amount']):
+            continue
+        entity = f"offering:{row['offering_id']}"
+        field = next((k for k, value in PRICES.items() if value == row['price_type']), row['price_type'])
+        observe(db, entity, field, source_for_url(row['url'], row['source_type']), row['url'] or '', row['source_id'], row['amount'], now, False, 'Quarantined legacy pricing row: ' + encode(dict(row)))
+        review(db, report, now, entity, field, row['amount'], None, [row['url']], 'Legacy invalid price quarantined; original row preserved as evidence', encode(dict(row)))
+        db.execute('DELETE FROM pricing_records WHERE id=?', (row['id'],))
+        if row['valid_until'] is None and not db.execute('SELECT 1 FROM pricing_records WHERE offering_id=? AND price_type=? AND valid_until IS NULL', (row['offering_id'], row['price_type'])).fetchone():
+            previous = db.execute('SELECT id,amount FROM pricing_records WHERE offering_id=? AND price_type=? AND amount>=0 ORDER BY id DESC LIMIT 1', (row['offering_id'], row['price_type'])).fetchone()
+            if previous and valid_value('input_price', previous['amount']):
+                db.execute('UPDATE pricing_records SET valid_until=NULL WHERE id=?', (previous['id'],))
+    for row in db.execute('SELECT o.*,s.url,s.source_type FROM provider_offerings o LEFT JOIN sources s ON s.id=o.source_id').fetchall():
+        for field, column in COLUMNS.items():
+            if field not in ('context_window', 'max_output_tokens') or row[column] is None or valid_value(field, row[column]):
+                continue
+            entity = f"offering:{row['id']}"
+            observe(db, entity, field, source_for_url(row['url'], row['source_type']), row['url'] or '', row['source_id'], row[column], now, False, 'Invalid legacy limit retained as evidence')
+            review(db, report, now, entity, field, row[column], None, [row['url']], 'Legacy invalid token limit quarantined')
+            db.execute(f'UPDATE provider_offerings SET {column}=NULL WHERE id=?', (row['id'],))
+
+
 def seed_observations(db, now, report):
-    if db.execute('SELECT 1 FROM data_observations LIMIT 1').fetchone():
+    if db.execute('SELECT 1 FROM data_observations WHERE accepted=1 LIMIT 1').fetchone():
         return
-    for row in db.execute('SELECT pr.*,s.url FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id WHERE valid_until IS NULL ORDER BY pr.id').fetchall():
+    for row in db.execute('SELECT pr.*,s.url,s.source_type FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id WHERE valid_until IS NULL ORDER BY pr.id').fetchall():
         field = next((k for k, v in PRICES.items() if v == row['price_type']), None)
         if field:
-            source = source_for_url(row['url'])
+            source = source_for_url(row['url'], row['source_type'])
             observe(db, f"offering:{row['offering_id']}", field, source, row['url'] or '', row['source_id'], row['amount'], now, evidence='Existing catalog price; original row retained')
-    for row in db.execute('SELECT o.*,s.url FROM provider_offerings o LEFT JOIN sources s ON s.id=o.source_id').fetchall():
+    for row in db.execute('SELECT o.*,s.url,s.source_type FROM provider_offerings o LEFT JOIN sources s ON s.id=o.source_id').fetchall():
         for field, column in COLUMNS.items():
             value = row[column]
             if value in ('YES', 'NO'):
                 value = value == 'YES'
             if valid_value(field, value):
-                observe(db, f"offering:{row['id']}", field, source_for_url(row['url']), row['url'] or '', row['source_id'], value, now, evidence='Existing catalog metadata')
+                observe(db, f"offering:{row['id']}", field, source_for_url(row['url'], row['source_type']), row['url'] or '', row['source_id'], value, now, evidence='Existing catalog metadata')
+    for row in db.execute('SELECT c.*,s.url,s.source_type FROM offering_capabilities c LEFT JOIN sources s ON s.id=c.source_id').fetchall():
+        if row['capability'] in ('vision', 'reasoning') and row['state'] in ('YES', 'NO'):
+            observe(db, f"offering:{row['offering_id']}", row['capability'], source_for_url(row['url'], row['source_type']), row['url'] or '', row['source_id'], row['state'] == 'YES', now, evidence='Existing route capability with original provenance')
     # Seed dates and benchmark scores have no per-value supporting evidence. Preserve,
     # explicitly flag, and do not elevate a publisher homepage to verified evidence.
     for row in db.execute('SELECT id,released_at FROM models WHERE released_at IS NOT NULL').fetchall():
@@ -91,7 +117,9 @@ def seed_observations(db, now, report):
         review(db, report, now, f"benchmark_result:{row['id']}", 'score', row['score'], None, [row['url']], 'Legacy benchmark score needs publisher result evidence, version and harness verification')
 
 
-def source_for_url(url):
+def source_for_url(url, source_type=None):
+    if source_type in {"official_provider", "official_docs", "official_metadata", "official_announcement", "benchmark_publisher"}:
+        return source_type
     if url and 'models.dev/' in url:
         return 'models.dev'
     if url and 'openrouter.ai/api/' in url:
@@ -209,6 +237,7 @@ def update(db, records, failures, manifests, now=None):
     now = now or datetime.now(timezone.utc).isoformat(timespec='seconds')
     report = {category: [] for category in CATEGORIES}
     report['Source failures'].extend(failures)
+    quarantine_legacy(db, report, now)
     seed_observations(db, now, report)
     records = guard_sources(db, records, manifests, report, now)
     if not records:
