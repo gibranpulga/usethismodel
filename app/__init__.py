@@ -53,8 +53,9 @@ def create_app(test_config=None):
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         response.headers.setdefault("Content-Security-Policy", f"default-src 'self'; style-src 'self'; script-src 'self' 'nonce-{g.csp_nonce}'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
-        if request.is_secure:
-            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        # Browsers ignore HSTS on plain HTTP; emitting it unconditionally also
+        # covers TLS terminated by Coolify's reverse proxy.
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
 
     @app.context_processor
