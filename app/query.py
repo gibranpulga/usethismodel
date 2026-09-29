@@ -80,6 +80,10 @@ def interpret_search(filters):
     if re.search(r"\bcheap(?:est)?\b|best value", text):
         set_if_empty("sort", "value", "Sort: best value")
         text = re.sub(r"\bcheap(?:est)?\b|best value", " ", text)
+    if re.search(r"\b(?:newest|new)\s+(?:models?\s+)?this\s+month\b", text):
+        set_if_empty("release", "month", "Release: this month")
+        set_if_empty("sort", "newest", "Sort: newest")
+        text = re.sub(r"\b(?:newest|new)\s+(?:models?\s+)?this\s+month\b", " ", text)
     if "commercial use" in text:
         set_if_empty("commercial", "1", "Commercial use: available")
         text = text.replace("commercial use", " ")
@@ -128,22 +132,26 @@ def route_rows(db, filters=None):
         except (TypeError, ValueError):
             return []
     if filters.get("provider_id") is not None:
-        clauses.append("p.id=?")
+        clauses.append("COALESCE(p.canonical_provider_id,p.id)=?")
         try:
             params.append(int(filters["provider_id"]))
         except (TypeError, ValueError):
             return []
     q = filters.get("q", "").strip()
     if q:
-        clauses.append("(lower(m.canonical_name) LIKE ? OR lower(o.api_model_id) LIKE ? OR lower(p.name) LIKE ? OR lower(COALESCE(l.name,m.vendor)) LIKE ?)")
-        params += [f"%{q.lower()}%"] * 4
-    for key, column in (("lab", "COALESCE(l.name,m.vendor)"), ("provider", "p.name"), ("type", "m.modality"), ("status", "m.status")):
+        normalized_q = re.sub(r"[\s._-]+", "", q.lower())
+        clauses.append("(lower(m.canonical_name) LIKE ? OR lower(o.api_model_id) LIKE ? OR lower(COALESCE(cp.name,p.name)) LIKE ? OR lower(COALESCE(l.name,m.vendor)) LIKE ? OR replace(replace(replace(replace(lower(m.canonical_name),' ',''),'-',''),'.',''),'_','') LIKE ? OR replace(replace(replace(replace(lower(o.api_model_id),' ',''),'-',''),'.',''),'_','') LIKE ?)")
+        params += [f"%{q.lower()}%"] * 4 + [f"%{normalized_q}%"] * 2
+    for key, column in (("lab", "COALESCE(l.name,m.vendor)"), ("provider", "COALESCE(cp.name,p.name)"), ("type", "m.modality"), ("status", "m.status")):
         if filters.get(key) and filters[key] != "any":
             clauses.append(f"{column}=?")
             params.append(filters[key])
     if filters.get("release") == "week":
         clauses.append("m.released_at >= ?")
         params.append((date.today() - timedelta(days=7)).isoformat())
+    elif filters.get("release") == "month":
+        clauses.append("m.released_at >= ?")
+        params.append(date.today().replace(day=1).isoformat())
     for key, field in (("input_max", "input_price"), ("output_max", "output_price")):
         if filters.get(key):
             try:
@@ -199,10 +207,11 @@ def route_rows(db, filters=None):
         SELECT o.id offering_id,o.api_model_id,o.context_limit,o.max_output_tokens,o.tool_support,
           o.structured_output_support,o.free_status,o.caveat,o.fetched_at,m.id model_id,
           o.rate_limit_note,o.privacy_caveat,o.commercial_use,o.first_seen_at,
+          o.lifecycle_status,o.last_seen_at,o.last_verified_at,
           (SELECT name FROM sources WHERE id=o.source_id) route_source_name,
           (SELECT url FROM sources WHERE id=o.source_id) route_source_url,
-          m.canonical_name,m.canonical_slug,m.modality,m.open_weights,m.status,m.released_at,
-          COALESCE(l.name,m.vendor) lab_name,p.id provider_id,p.name provider_name,
+          m.canonical_name,m.canonical_slug,m.modality,m.open_weights,m.status,m.released_at,m.identity_kind,
+          COALESCE(l.name,m.vendor) lab_name,COALESCE(cp.id,p.id) provider_id,COALESCE(cp.name,p.name) provider_name,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) input_price,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='OUTPUT' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) output_price,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='CACHE_READ' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) cache_read_price,
@@ -211,8 +220,11 @@ def route_rows(db, filters=None):
           (SELECT price_type FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type NOT IN ('INPUT','OUTPUT','CACHE_READ','CACHE_WRITE','BATCH_INPUT','BATCH_OUTPUT') AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) media_price_type,
           {_yes_capability('reasoning')} reasoning, {_yes_capability('vision')} vision,
           {_yes_capability('caching')} caching, {_yes_capability('batch')} batch,
-          EXISTS (SELECT 1 FROM offers x WHERE x.provider_id=p.id AND (x.offering_id IS NULL OR x.offering_id=o.id) AND x.status='ACTIVE' AND (x.starts_at IS NULL OR x.starts_at<=date('now')) AND (x.ends_at IS NULL OR x.ends_at>=date('now'))) active_deal
+          EXISTS (SELECT 1 FROM offers x WHERE x.provider_id=p.id AND (x.offering_id IS NULL OR x.offering_id=o.id) AND x.status='ACTIVE' AND (x.starts_at IS NULL OR x.starts_at<=date('now')) AND (x.ends_at IS NULL OR x.ends_at>=date('now'))) active_deal,
+          (SELECT COUNT(*) FROM offers x WHERE x.offering_id=o.id AND x.route_variant_id IS NOT NULL AND x.status='ACTIVE' AND (x.starts_at IS NULL OR x.starts_at<=date('now')) AND (x.ends_at IS NULL OR x.ends_at>=date('now'))) deal_route_count,
+          (SELECT GROUP_CONCAT(DISTINCT rv.upstream_provider) FROM offers x JOIN openrouter_route_variants rv ON rv.id=x.route_variant_id WHERE x.offering_id=o.id AND x.status='ACTIVE') deal_providers
         FROM provider_offerings o JOIN models m ON m.id=o.model_id JOIN providers p ON p.id=o.provider_id
+          LEFT JOIN providers cp ON cp.id=p.canonical_provider_id
           LEFT JOIN labs l ON l.id=m.lab_id
         WHERE {' AND '.join(clauses)}
         ORDER BY
@@ -236,7 +248,7 @@ def route_rows(db, filters=None):
 def filter_options(db):
     return {
         "labs": [r[0] for r in db.execute("SELECT name FROM labs ORDER BY name")],
-        "providers": [r[0] for r in db.execute("SELECT name FROM providers ORDER BY name")],
+        "providers": [r[0] for r in db.execute("SELECT name FROM providers WHERE canonical_provider_id IS NULL ORDER BY name")],
         "types": [r[0] for r in db.execute("SELECT DISTINCT modality FROM models ORDER BY modality")],
         "use_cases": [dict(r) for r in db.execute("SELECT slug,name FROM use_cases ORDER BY name")],
         "harnesses": [dict(r) for r in db.execute("SELECT id,name FROM harnesses ORDER BY name")],
@@ -281,13 +293,35 @@ def offer_rows(db, include_expired=False):
     condition = "1=1" if include_expired else "x.status='ACTIVE' AND (x.starts_at IS NULL OR x.starts_at<=date('now')) AND (x.ends_at IS NULL OR x.ends_at>=date('now'))"
     return [dict(r) for r in db.execute(f"""
       SELECT x.*,p.name provider_name,o.api_model_id,m.canonical_name,o.tool_support,
-        o.context_limit,o.rate_limit_note,o.privacy_caveat route_privacy_caveat
+        o.context_limit,o.rate_limit_note,o.privacy_caveat route_privacy_caveat,
+        rv.upstream_provider,rv.provider_tag,rv.endpoint_status,rv.quantization
       FROM offers x JOIN providers p ON p.id=x.provider_id
       LEFT JOIN provider_offerings o ON o.id=x.offering_id
       LEFT JOIN models m ON m.id=o.model_id
+      LEFT JOIN openrouter_route_variants rv ON rv.id=x.route_variant_id
       WHERE {condition}
       ORDER BY x.status='ACTIVE' DESC,x.last_verified_at DESC,p.name,x.title
     """).fetchall()]
+
+
+def openrouter_free_rows(db, tools_only=False):
+    condition = "AND rv.tool_support='YES'" if tools_only else ""
+    return [dict(row) for row in db.execute(f"""
+      SELECT rv.*,m.canonical_name,m.canonical_slug,o.api_model_id,
+        CASE WHEN instr(COALESCE(rv.input_modalities_json,''),'image')>0 THEN 'YES' ELSE 'NO' END vision_support
+      FROM openrouter_route_variants rv
+      JOIN provider_offerings o ON o.id=rv.offering_id
+      JOIN models m ON m.id=o.model_id
+      WHERE rv.is_free=1 AND rv.endpoint_status=0 {condition}
+      ORDER BY rv.tool_support='YES' DESC,m.canonical_name,rv.upstream_provider,rv.provider_tag
+    """).fetchall()]
+
+
+def openrouter_variant_rows(db, offering_id):
+    return [dict(row) for row in db.execute("""
+      SELECT * FROM openrouter_route_variants WHERE offering_id=?
+      ORDER BY endpoint_status=0 DESC,input_price IS NULL,input_price,output_price,upstream_provider,provider_tag
+    """, (offering_id,)).fetchall()]
 
 
 def pricing_differences(db):
@@ -323,7 +357,7 @@ def ranking_groups(db):
         m.canonical_name,s.name source_name,s.url source_url
       FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id
       JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
-      WHERE br.confidence IN ('HIGH','MEDIUM')
+      WHERE br.confidence IN ('HIGH','MEDIUM') AND b.is_current=1
       ORDER BY br.score DESC LIMIT 12
     """).fetchall()]
     coding = [r for r in benchmark if "cod" in (r["category"] or "").lower()]

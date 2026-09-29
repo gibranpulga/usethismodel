@@ -4,13 +4,13 @@
     "benchmark_results": [
       {
         "path": "snapshot/benchmark_results/000000.json",
-        "sha256": "5c6c663ef1a94cae15889f2483c94690f6f572c5718d2f5082c9ceffef858d4e"
+        "sha256": "766dbcc5f3297b9cf3271dce415fbf85448a4a8473825e590539690918ab2e25"
       }
     ],
     "benchmarks": [
       {
         "path": "snapshot/benchmarks/000000.json",
-        "sha256": "401e580df3791fee200dd5827a04f016472504864dbf4c1648f52f7432da18b9"
+        "sha256": "cfe7de72447ab2a747d0cdb40ea659f14ecc392ee37ea996e174310f9bd1925a"
       }
     ],
     "compatibility_notes": [],
@@ -434,7 +434,7 @@
       },
       {
         "path": "snapshot/data_observations/000104.json",
-        "sha256": "7637c42e0b84f974f849ad8f36c5b9ee6e2967ebb5613548de21d64b01ebe375"
+        "sha256": "0f30ada5d398ca40906c94784a3dbf0329a6edc78ea42963e1562d5172653edb"
       }
     ],
     "data_runs": [],
@@ -528,19 +528,19 @@
     "models": [
       {
         "path": "snapshot/models/000000.json",
-        "sha256": "4992f8a7eaa00aab006d91351e2e9393b19b87e743416f273f11f6f638e94eff"
+        "sha256": "8d0b831c3774dc3674588a8703e492287402df067e1689255a305d4302f13f66"
       },
       {
         "path": "snapshot/models/000001.json",
-        "sha256": "6fd2fc70f069f33330991b5db990339136d8767149db130bae558acf933155fc"
+        "sha256": "50626f4f3352f0bdec8d91043f2ba5afa417586dc04e01dc781bcaa3917ab931"
       },
       {
         "path": "snapshot/models/000002.json",
-        "sha256": "3f8e2a99cc1da05305c533bbcc6d72ccf784ce557711cf630c324a40b7caf7fe"
+        "sha256": "2687fa1353394bedc8a295a4cf80b4dacc97f72e87ca7b47cedd0d6f2f550123"
       },
       {
         "path": "snapshot/models/000003.json",
-        "sha256": "8fd2ef21f7c98221937b14133472da6e96826f57e5cf8380cfa9ce177065ffd7"
+        "sha256": "2d791ddb737c11da51fa63ffe5850dc4204b2d15fd49f6d216113f086675f316"
       }
     ],
     "offering_capabilities": [
@@ -688,7 +688,17 @@
     "offers": [
       {
         "path": "snapshot/offers/000000.json",
-        "sha256": "25de69300861c6afd82e6e13afb471333a82310d1d9b0ffb4a4317e73e2e0a43"
+        "sha256": "813e687068f8c296dab5f1ad955ed652cfbde14d929cf3192792316492439a3b"
+      }
+    ],
+    "openrouter_route_variants": [
+      {
+        "path": "snapshot/openrouter_route_variants/000000.json",
+        "sha256": "5b7815db99a1e223ecae9f715a44c55185d9b7c6bde75d632bc582b52259bb69"
+      },
+      {
+        "path": "snapshot/openrouter_route_variants/000001.json",
+        "sha256": "a0950da6d2281d1c10a62e9a7e87bed83bd8620701c7afb8d08ffa04278725c8"
       }
     ],
     "plans": [],
@@ -787,7 +797,7 @@
       },
       {
         "path": "snapshot/pricing_records/000023.json",
-        "sha256": "22c850a65a68550944c8c36819722a17715db83b6ed13b0b0118d5510d0b8d3d"
+        "sha256": "c717647582a756d6de372b86b90721e0028e7da046cf176c0794533d0649052d"
       },
       {
         "path": "snapshot/pricing_records/000024.json",
@@ -799,69 +809,69 @@
       },
       {
         "path": "snapshot/pricing_records/000026.json",
-        "sha256": "4da0297b058dfbf8b33ddfd73c96dc4ef65018e177f86cd2c15457dedcfb55af"
+        "sha256": "adad48ad95a65f2b0d5868f9b1bd960ce16c01712d5bb3373ae444bc67dc35c0"
       }
     ],
     "provider_offerings": [
       {
         "path": "snapshot/provider_offerings/000000.json",
-        "sha256": "2bd0c7a91b4639f69484dd67aa6f66fa91817a209da5fccce56204027a0fb641"
+        "sha256": "7888503a3e5b7de871b12ce29bd887ad902b8614d39b6c38bb9a6a556df22544"
       },
       {
         "path": "snapshot/provider_offerings/000001.json",
-        "sha256": "155175398401139abe0aca3ddab3ec92320fa41bc831ddc6bd9c355498b970fe"
+        "sha256": "9d5367023192f634fe959169003eed15f0a791493dfb157f2f440a1c8f418d00"
       },
       {
         "path": "snapshot/provider_offerings/000002.json",
-        "sha256": "f3c8bb06e6759dee9bc8a6b1205696de9255f0ff934c9525ae20ee5e1eebacd7"
+        "sha256": "4695726b781968860f0efcaf488e3388461fdbce7c9e98647def9741a0ebcff8"
       },
       {
         "path": "snapshot/provider_offerings/000003.json",
-        "sha256": "9bc37325a9100fc9ee2668355df5638a38ea9d74d35201339fe6f5f2fc8d91a5"
+        "sha256": "55d2720479e9ca09f4cd535aa4371dd71cb6106a2a90190233aaa2546d0495c7"
       },
       {
         "path": "snapshot/provider_offerings/000004.json",
-        "sha256": "dc08a783d70a3fbb85cbd591484fe1ea4778ae55e89e28f7ff0b1a4c2322e6f2"
+        "sha256": "1e0173e13997ea68dcb6148377e122e5fa34cddbde60303f7a49e5a0ef4edd7a"
       },
       {
         "path": "snapshot/provider_offerings/000005.json",
-        "sha256": "7dfba087c0e3af1c812506022330a48aa71d1bfad5eaa1efed94aee5a63c13a1"
+        "sha256": "4368598440bacf281db4daab0e4de5872c1a8af82bd6513450fe1cd0ce112296"
       },
       {
         "path": "snapshot/provider_offerings/000006.json",
-        "sha256": "dba377726cee6b6ba3b9a4436565e6258c7d5161437341ba3fc3d03f5070ba61"
+        "sha256": "6f23996ef3efb845fd7b3c14f14015d074eb01bf664c941edfc30761a26a6444"
       },
       {
         "path": "snapshot/provider_offerings/000007.json",
-        "sha256": "6aa6cd15d52fa0c66b139c022f907849aa3ba8d8b77213ae03454a6b38fa7a4b"
+        "sha256": "9eae36cbf4551dd6234c085b0d4013d1a18d72fb8ea60217c307d2c08542b06d"
       },
       {
         "path": "snapshot/provider_offerings/000008.json",
-        "sha256": "757fe681fac682c9f7997cb57b19347990b919a00b072503f13f89fb67b9f54c"
+        "sha256": "5eb697fc294257e8a3a2a2200bf9552327d28a3095b8b4f44c0c477fef68ddb9"
       },
       {
         "path": "snapshot/provider_offerings/000009.json",
-        "sha256": "0991bbf4bca4ec4e08107c8cd1a2ed4e32ea79d038d9be8421071ad767e3cfaa"
+        "sha256": "356543f891759524d81de614a7db48769fb43872afb36adccdaffdc7651d834a"
       }
     ],
     "providers": [
       {
         "path": "snapshot/providers/000000.json",
-        "sha256": "ff59e22f9a03b3028f96dcf7c15e13d5b98b9cd60e9fcd17e2d948a1830a9452"
+        "sha256": "e6ed9b0bfa1d014fe0a4b85e0184ad9583b30848e4f7db0ca9661588a6897429"
       }
     ],
     "review_queue": [
       {
         "path": "snapshot/review_queue/000000.json",
-        "sha256": "aa70be67d2b41c13e04f70ca7064aed7daba3f087c412a5d926796a7e2958725"
+        "sha256": "79c155eb30be495d4b10ce0073bf626645af212fa3783206d580b7b1dca83fe4"
       },
       {
         "path": "snapshot/review_queue/000001.json",
-        "sha256": "ffdabdb855a5f6098ca642c62ff92450a0fb7c3aea57d2ddd9424559c7919556"
+        "sha256": "2c20fe01fbbd67eba09e38dea4a1feaf0d2808ced2cd638f937b5a1e979b1c4e"
       },
       {
         "path": "snapshot/review_queue/000002.json",
-        "sha256": "7efb483be2c19357fa761fa40f09da169f4704cf3baa5bdcc30e5706e6e39ba2"
+        "sha256": "d1559b16fc9fd5d751296193e8d35497d04b12be3df4cb8a67f7b55f8529adc2"
       }
     ],
     "route_capabilities": [],
@@ -917,7 +927,7 @@
       },
       {
         "path": "snapshot/selected_facts/000012.json",
-        "sha256": "9faa554b7c8631a5b798e2813e3f77215583d1e0b8d9db85bb82e3078cb8d871"
+        "sha256": "5e845fd492975a69a8717dc8f683aa10b140a29ca5af5067ef5a5cab3a8923fc"
       },
       {
         "path": "snapshot/selected_facts/000013.json",
@@ -949,15 +959,15 @@
       },
       {
         "path": "snapshot/selected_facts/000020.json",
-        "sha256": "7a08a2d70ec27f3d5d4b189d6c510205c9f11b86b920d7caccc9b38217bdf6bb"
+        "sha256": "7cdef9ef0a5cd41e734df5d13b90ee410101d4cfc02d993151641654d702115b"
       },
       {
         "path": "snapshot/selected_facts/000021.json",
-        "sha256": "918e8733edaa564403698065faa1b1bc77d4697c3cbcb8141227ac9991daf223"
+        "sha256": "2611b89fe45d61d6f0cfd70aa9c51b39c2888d7967e2af28a9db60b05ec0f607"
       },
       {
         "path": "snapshot/selected_facts/000022.json",
-        "sha256": "39b90d44f1786a7b2c64883811b26802276b1fd457bee79c62e2223f2bab38a8"
+        "sha256": "fde3abda2f0178ea6dac3a134c198c9db260c1498386c3e6e7e080669b490b0d"
       },
       {
         "path": "snapshot/selected_facts/000023.json",
@@ -1192,16 +1202,22 @@
         "sha256": "458efdbd4ab412a3da989bfaaf06a0168819630b69bcd59a57e18c63a11d091f"
       }
     ],
+    "source_health": [
+      {
+        "path": "snapshot/source_health/000000.json",
+        "sha256": "acf781f761060d35cb6b3a5257f6b6e7462a73d6c65325de93f136a7f2002c43"
+      }
+    ],
     "source_state": [
       {
         "path": "snapshot/source_state/000000.json",
-        "sha256": "1fb3912c665e23c48c2933eb3728c0624f5ec2dde3794d7e6438039cfb3a1f63"
+        "sha256": "8985e79f13c1f75eb0b51f3b0a77d590572542db571388ffd8c4bc9df63cceac"
       }
     ],
     "sources": [
       {
         "path": "snapshot/sources/000000.json",
-        "sha256": "94826c79a5b95439e3884dd7f6f4b659426f4764210e696de666fb06ef40b436"
+        "sha256": "e5021ddf9e31f780337b15353daf1d56c7657e2ca9cdb251fb28d1088f4b20f3"
       }
     ],
     "use_cases": [

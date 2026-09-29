@@ -3,10 +3,10 @@
 {"fetched_at":"2026-09-29 15:14:19","id":2,"name":"OpenRouter model API","reliability":"MEDIUM","source_type":"machine-readable catalog","url":"https://openrouter.ai/api/v1/models"},
 {"fetched_at":"2026-09-29 15:14:19","id":3,"name":"LiteLLM price map","reliability":"MEDIUM","source_type":"cross-check","url":"https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json"},
 {"fetched_at":"2026-09-29 15:14:19","id":4,"name":"Hermes MCP documentation","reliability":"HIGH","source_type":"documentation","url":"https://github.com/hermes-agent-org/hermes/blob/main/website/docs/user-guide/features/mcp.md"},
-{"fetched_at":"2026-09-29 15:14:19","id":5,"name":"LiveBench","reliability":"HIGH","source_type":"benchmark","url":"https://livebench.ai/"},
+{"fetched_at":"2026-09-29T21:29:13+00:00","id":5,"name":"LiveBench","reliability":"HIGH","source_type":"benchmark_publisher","url":"https://livebench.ai/"},
 {"fetched_at":"2026-09-29 15:14:19","id":6,"name":"SWE-bench","reliability":"HIGH","source_type":"benchmark","url":"https://www.swebench.com/"},
 {"fetched_at":"2026-09-29 15:14:19","id":7,"name":"Terminal-Bench","reliability":"HIGH","source_type":"benchmark","url":"https://www.tbench.ai/"},
-{"fetched_at":"2026-09-29 15:14:19","id":8,"name":"Artificial Analysis Intelligence Index","reliability":"HIGH","source_type":"benchmark","url":"https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index"},
+{"fetched_at":"2026-09-29T21:29:13+00:00","id":8,"name":"Artificial Analysis","reliability":"HIGH","source_type":"benchmark_publisher","url":"https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index"},
 {"fetched_at":"2026-09-29 15:55:44","id":9,"name":"litellm","reliability":"MEDIUM","source_type":"machine-readable catalog","url":"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"},
 {"fetched_at":"2026-09-29 19:54:09","id":10,"name":"OpenRouter Free Models Router","reliability":"HIGH","source_type":"official_provider","url":"https://openrouter.ai/openrouter/free/apps"},
 {"fetched_at":"2026-09-29 19:54:09","id":11,"name":"OpenRouter pricing and rate limits","reliability":"HIGH","source_type":"official_provider","url":"https://openrouter.ai/pricing/"},
@@ -23,5 +23,10 @@
 {"fetched_at":"2026-09-29 19:54:09","id":22,"name":"SPAR3D repository","reliability":"HIGH","source_type":"official_metadata","url":"https://github.com/Stability-AI/stable-point-aware-3d"},
 {"fetched_at":"2026-09-29 19:54:09","id":23,"name":"Sloyd API pricing","reliability":"HIGH","source_type":"official_provider","url":"https://www.sloyd.ai/api/pricing"},
 {"fetched_at":"2026-09-29 19:54:09","id":24,"name":"Hi3D API pricing","reliability":"HIGH","source_type":"official_provider","url":"https://docs.hi3d.ai/en/api/getting-started/pricing"},
-{"fetched_at":"2026-09-29 19:54:09","id":25,"name":"3D Arena paper","reliability":"HIGH","source_type":"benchmark_publisher","url":"https://arxiv.org/abs/2506.18787"}
+{"fetched_at":"2026-09-29 19:54:09","id":25,"name":"3D Arena paper","reliability":"HIGH","source_type":"benchmark_publisher","url":"https://arxiv.org/abs/2506.18787"},
+{"fetched_at":"2026-09-29T21:29:13+00:00","id":26,"name":"Artificial Analysis","reliability":"HIGH","source_type":"benchmark_publisher","url":"https://artificialanalysis.ai/agents/coding-agents"},
+{"fetched_at":"2026-09-29T21:29:13+00:00","id":27,"name":"Harbor / Terminal-Bench","reliability":"HIGH","source_type":"benchmark_publisher","url":"https://www.tbench.ai/news/terminal-bench-4-0"},
+{"fetched_at":"2026-09-29T21:29:13+00:00","id":28,"name":"SWE-bench","reliability":"HIGH","source_type":"benchmark_publisher","url":"https://www.swebench.com/verified.html"},
+{"fetched_at":"2026-09-29T21:29:13+00:00","id":29,"name":"Scale AI","reliability":"HIGH","source_type":"benchmark_publisher","url":"https://labs.scale.com/leaderboard/swe_bench_pro_public_v2"},
+{"fetched_at":"2026-09-29 21:15:57","id":30,"name":"OpenRouter provider endpoints","reliability":"MEDIUM","source_type":"machine-readable catalog","url":"https://openrouter.ai/docs/api/api-reference/endpoints/list-endpoints"}
 ]

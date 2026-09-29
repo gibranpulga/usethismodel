@@ -25,6 +25,32 @@ def priority(source, field):
     return {'official_announcement': 5, 'official_provider': 10, 'official_docs': 10, 'official_metadata': 15, 'openrouter': 20, 'models.dev': 30, 'litellm': 40, 'legacy-unverified': 90}.get(source, 60)
 
 
+def record_source_health(db, sources, failures, manifests, now):
+    """Record attempts separately from successes and content/schema changes."""
+    failed = {item['source']: item.get('error') for item in failures}
+    for source, url in sources:
+        manifest = manifests.get(source, {})
+        prior = db.execute('SELECT schema_hash FROM source_health WHERE source=?', (source,)).fetchone()
+        schema_hash = manifest.get('schema_hash')
+        schema_changed = bool(prior and prior[0] and schema_hash and prior[0] != schema_hash)
+        status = 'ERROR' if source in failed else 'SCHEMA_CHANGED' if schema_changed else 'OK'
+        changed = db.execute(
+            'SELECT COUNT(*) FROM data_observations WHERE source=? AND observed_at=?',
+            (source, now),
+        ).fetchone()[0]
+        db.execute('''INSERT INTO source_health(source,source_url,last_attempt_at,last_success_at,status,
+          records_imported,records_changed,error,schema_hash,schema_changed_at,response_note)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source) DO UPDATE SET
+          source_url=excluded.source_url,last_attempt_at=excluded.last_attempt_at,
+          last_success_at=COALESCE(excluded.last_success_at,source_health.last_success_at),status=excluded.status,
+          records_imported=excluded.records_imported,records_changed=excluded.records_changed,error=excluded.error,
+          schema_hash=COALESCE(excluded.schema_hash,source_health.schema_hash),
+          schema_changed_at=COALESCE(excluded.schema_changed_at,source_health.schema_changed_at),response_note=excluded.response_note''',
+          (source, url, now, None if source in failed else now, status, manifest.get('count', 0), changed,
+           failed.get(source), schema_hash, now if schema_changed else None,
+           f"Fetched {manifest.get('count', 0)} normalized records" if source not in failed else None))
+
+
 def valid_value(field, value):
     if value is None:
         return False
@@ -150,9 +176,20 @@ def validate(db):
         errors.append(f'Duplicate current price records for offering {duplicate[0]} {duplicate[1]}')
     if db.execute("SELECT 1 FROM offers WHERE status='ACTIVE' AND last_verified_at IS NULL").fetchone():
         errors.append('Active offer without verification timestamp')
+    if db.execute("SELECT 1 FROM openrouter_route_variants WHERE is_free=1 AND (input_price IS NULL OR output_price IS NULL OR input_price!=0 OR output_price!=0)").fetchone():
+        errors.append('OpenRouter free variant without explicit zero input and output prices')
+    if db.execute("""SELECT 1 FROM offers x LEFT JOIN openrouter_route_variants rv ON rv.id=x.route_variant_id
+      WHERE x.status='ACTIVE' AND x.offer_type='PROMOTIONAL_DISCOUNT'
+      AND (rv.id IS NULL OR rv.endpoint_status!=0 OR rv.discount_percent<=0)""").fetchone():
+        errors.append('Active OpenRouter promotion without an available discounted route')
+    if db.execute("SELECT 1 FROM openrouter_route_variants WHERE source_id IS NULL OR source_url='' OR last_verified_at IS NULL").fetchone():
+        errors.append('OpenRouter route variant missing provenance or verification')
+    columns = {row[1] for row in db.execute('PRAGMA table_info(models)')}
+    if 'identity_kind' in columns and db.execute("SELECT 1 FROM models WHERE (lower(canonical_slug) LIKE '%latest%' OR lower(canonical_name) LIKE '%latest%') AND identity_kind!='MOVING_ALIAS'").fetchone():
+        errors.append('Latest alias presented as an immutable release')
     if errors:
         raise ValueError('; '.join(errors[:20]))
-    return {'integrity': 'ok', 'foreign_keys': 'ok', 'prices': 'ok', 'limits': 'ok', 'free_routes': 'ok', 'release_dates': 'ok', 'current_price_uniqueness': 'ok', 'offer_verification': 'ok'}
+    return {'integrity': 'ok', 'foreign_keys': 'ok', 'prices': 'ok', 'limits': 'ok', 'free_routes': 'ok', 'release_dates': 'ok', 'current_price_uniqueness': 'ok', 'offer_verification': 'ok', 'openrouter_route_variants': 'ok', 'model_identity': 'ok'}
 
 
 def guard_sources(db, records, manifests, report, now):
@@ -262,7 +299,7 @@ def update(db, records, failures, manifests, now=None):
         provider_key = record['provider_key']
         if provider_key not in provider_ids:
             # Preserve existing display identities; models.dev names otherwise authoritative for naming.
-            aliases = {'zai': 'Z.ai', 'z-ai': 'Z.ai', 'google': 'Google AI', 'moonshotai': 'Moonshot AI', 'deepinfra': 'DeepInfra'}
+            aliases = {'zai': 'Z.ai', 'z-ai': 'Z.ai', 'google': 'Google AI', 'moonshotai': 'Moonshot AI', 'deepinfra': 'DeepInfra', 'novita': 'Novita AI', 'novita-ai': 'Novita AI'}
             name = aliases.get(provider_key, record['provider_name'])
             found = db.execute('SELECT id FROM providers WHERE lower(name)=lower(?)', (name,)).fetchone()
             provider_ids[provider_key] = found[0] if found else _provider(db, name)
@@ -282,7 +319,7 @@ def update(db, records, failures, manifests, now=None):
                 duplicates = db.execute('SELECT canonical_slug FROM models WHERE id!=? AND lower(canonical_name)=lower(?)', (mid, record['name'])).fetchall()
                 if duplicates:
                     review(db, report, now, f'model:{mid}', 'canonical identity', record['canonical_slug'], [r[0] for r in duplicates], [record['source_url']], 'Similar name has a different canonical ID; no automatic fuzzy merge')
-            oid = db.execute('INSERT INTO provider_offerings(model_id,provider_id,api_model_id,source_id,fetched_at,first_seen_at) VALUES(?,?,?,?,?,?)', (mid, pid, record['api_model_id'], sid, now, now)).lastrowid
+            oid = db.execute('INSERT INTO provider_offerings(model_id,provider_id,api_model_id,source_id,fetched_at,first_seen_at,last_seen_at,last_verified_at) VALUES(?,?,?,?,?,?,?,?)', (mid, pid, record['api_model_id'], sid, now, now, now, now)).lastrowid
             db.execute('INSERT OR IGNORE INTO model_aliases(model_id,alias,provider_id,source_id) VALUES(?,?,?,?)', (mid, record['api_model_id'], pid, sid))
             report['New provider offerings'].append({'id': oid, 'provider': record['provider_name'], 'model': record['api_model_id']})
         for field, values in sorted(record.get('rejected_fields', {}).items()):
@@ -396,7 +433,7 @@ def main():
     args = parser.parse_args()
     from . import create_app
     from .db import get_db
-    from .update_sources import fetch_harness_changes, fetch_sources
+    from .update_sources import SOURCES, fetch_harness_changes, fetch_sources
     # Dry runs use a SQLite backup and never migrate/write the original database or artifacts.
     with tempfile.TemporaryDirectory() as temp:
         database = args.database
@@ -418,8 +455,27 @@ def main():
             now = datetime.now(timezone.utc).isoformat(timespec='seconds')
             try:
                 report = update(db, records, failures, manifests, now)
+                record_source_health(db, [(name, url) for name, url, _ in SOURCES], failures, manifests, now)
                 harnesses, harness_failures, harness_manifests = fetch_harness_changes()
                 monitor_harnesses(db, harnesses, harness_failures, harness_manifests, report, now)
+                record_source_health(db, [('hermes-official-docs', harness_manifests.get('hermes-official-docs', {}).get('url'))], harness_failures, harness_manifests, now)
+                from .benchmark_sources import sync_benchmark_registry
+                sync_benchmark_registry(db, now)
+                if not args.dry_run:
+                    from .openrouter_routes import (
+                        fetch_openrouter_variants,
+                        sync_openrouter_variants,
+                    )
+                    variants, route_failures, route_manifest = fetch_openrouter_variants()
+                    route_result = sync_openrouter_variants(db, variants, route_failures, route_manifest, now)
+                    if route_result['imported']:
+                        report['New provider offerings'].append({'openrouter_endpoint_variants': route_result['imported']})
+                    if route_result['failures']:
+                        report['Source failures'].append({'source': 'openrouter-routes', 'error': f"{route_result['failures']} endpoint fetches failed"})
+                from .data_quality import auto_resolve_safe_reviews
+                auto_resolve_safe_reviews(db, now)
+                report['validation'] = validate(db)
+                report['records_changed'] = {key: len(report[key]) for key in CATEGORIES}
                 db.commit()
             except Exception as error:
                 if not args.dry_run:

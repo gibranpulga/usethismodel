@@ -317,7 +317,13 @@ def fetch_sources(fetcher=None):
                 )
                 continue
             records.extend(source_records)
-            manifests[source] = {"count": len(source_records), "hash": digest, "url": url}
+            schema = sorted({key for record in source_records for key in record.get("fields", {})})
+            manifests[source] = {
+                "count": len(source_records),
+                "hash": digest,
+                "schema_hash": hashlib.sha256(json.dumps(schema).encode()).hexdigest(),
+                "url": url,
+            }
     return records, failures, manifests
 
 

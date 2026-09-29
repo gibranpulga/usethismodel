@@ -29,7 +29,7 @@ def test_database_initializes_all_migrations(app):
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
 
-    assert migrations == [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,)]
+    assert migrations == [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,), (11,)]
     assert {
         "models",
         "providers",
@@ -173,6 +173,7 @@ def test_finder_workflows_and_shared_filter_urls(client, path, required):
         ("glm cheap coding", {"q": "glm", "sort": "value", "use_case": "coding"}),
         ("open source tools", {"open_weights": "1", "tools": "1"}),
         ("image to 3d", {"type": "3D generation", "image_to_3d": "1"}),
+        ("newest models this month", {"release": "month", "sort": "newest"}),
     ],
 )
 def test_deterministic_quick_search(query, expected):
@@ -300,8 +301,10 @@ def test_seo_discovery_and_filter_index_policy(client):
 
 def test_search_keeps_model_punctuation_and_keyword_boundaries(client):
     assert b"GLM-5.3" in client.get("/models?q=glm-5.3").data
+    assert b"GLM-5.3" in client.get("/models?q=glm+5.3").data
     interpreted, _ = interpret_search({"q": "notopenrouterish"})
     assert "access" not in interpreted
+    assert client.get("/api/v1/free-routes?tools=true").status_code == 200
 
 
 @pytest.mark.parametrize("path", [

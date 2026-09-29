@@ -11,6 +11,8 @@ from .query import (
     filter_options,
     interpret_search,
     offer_rows,
+    openrouter_free_rows,
+    openrouter_variant_rows,
     price_history,
     pricing_differences,
     ranking_groups,
@@ -60,6 +62,7 @@ def create_app(test_config=None):
 
     @app.context_processor
     def navigation():
+        from .data_quality import freshness_text
         canonical = request.url_root.rstrip("/") + request.path
         return {
             "nav": NAV,
@@ -69,6 +72,7 @@ def create_app(test_config=None):
             "meta_description": "Compare AI models by exact provider route, current price, capabilities, harness compatibility, sources, and verification date.",
             "robots_meta": "noindex,follow" if request.args else "index,follow",
             "csp_nonce": g.csp_nonce,
+            "freshness_text": freshness_text,
         }
 
     def db():
@@ -191,11 +195,14 @@ def create_app(test_config=None):
         route = next(iter(route_rows(db(), {"offering_id": offering_id})), None)
         peers = route_rows(db(), {"model_id": route["model_id"], "limit": 250})
         offers = [o for o in offer_rows(db(), include_expired=True) if o["offering_id"] in (None, offering_id) and o["provider_id"] == route["provider_id"]]
-        return render_template("route_detail.html", title=f"{route['canonical_name']} via {route['provider_name']}", route=route, history=price_history(db(), offering_id), peers=peers, offers=offers, sources=source_rows(db(), offering_id=offering_id), canonical_url=request.url_root.rstrip('/') + request.path, meta_description=f"Current {route['canonical_name']} pricing, limits, tool support, offers, price history, and sources for the {route['provider_name']} route.")
+        return render_template("route_detail.html", title=f"{route['canonical_name']} via {route['provider_name']}", route=route, history=price_history(db(), offering_id), peers=peers, offers=offers, route_variants=openrouter_variant_rows(db(), offering_id), sources=source_rows(db(), offering_id=offering_id), canonical_url=request.url_root.rstrip('/') + request.path, meta_description=f"Current {route['canonical_name']} pricing, limits, tool support, offers, price history, and sources for the {route['provider_name']} route.")
 
     @app.get("/providers")
     def providers():
-        providers = rows("SELECT p.id,p.name,p.website_url,COUNT(o.id) route_count FROM providers p LEFT JOIN provider_offerings o ON o.provider_id=p.id GROUP BY p.id ORDER BY p.name")
+        providers = rows("""SELECT p.id,p.name,p.website_url,COUNT(o.id) route_count FROM providers p
+          LEFT JOIN providers alias ON alias.canonical_provider_id=p.id
+          LEFT JOIN provider_offerings o ON o.provider_id IN (p.id,alias.id)
+          WHERE p.canonical_provider_id IS NULL GROUP BY p.id ORDER BY p.name""")
         return render_template("providers.html", title="Providers", providers=providers)
 
     @app.get("/providers/<int:provider_id>")
@@ -289,7 +296,7 @@ def create_app(test_config=None):
     @app.get("/offers")
     def offers():
         differences = pricing_differences(db())
-        return render_template("offers.html", title="Offers & deals", offers=offer_rows(db()), expired=offer_rows(db(), include_expired=True), discounts=differences["discounts"], direct_differences=differences["direct"])
+        return render_template("offers.html", title="Offers & deals", offers=offer_rows(db()), expired=offer_rows(db(), include_expired=True), free_routes=openrouter_free_rows(db()), discounts=differences["discounts"], direct_differences=differences["direct"])
 
     @app.get("/rankings")
     def rankings():
@@ -308,7 +315,7 @@ def create_app(test_config=None):
 
     @app.get("/benchmarks")
     def benchmarks():
-        return render_template("benchmarks.html", title="Benchmarks", benchmarks=rows("SELECT b.*,COUNT(br.id) result_count FROM benchmarks b LEFT JOIN benchmark_results br ON br.benchmark_id=b.id GROUP BY b.id ORDER BY b.name"), results=rows("SELECT b.name benchmark,m.canonical_name,br.score,br.metric,br.confidence FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id JOIN models m ON m.id=br.model_id ORDER BY b.name,br.score DESC"))
+        return render_template("benchmarks.html", title="Benchmarks", benchmarks=rows("SELECT b.*,COUNT(br.id) result_count FROM benchmarks b LEFT JOIN benchmark_results br ON br.benchmark_id=b.id GROUP BY b.id ORDER BY b.is_current DESC,b.name,b.version DESC"), results=rows("SELECT b.name benchmark,b.version,m.canonical_name,br.score,br.metric,br.confidence,br.harness_name,br.scaffold,br.reasoning_setting FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id JOIN models m ON m.id=br.model_id WHERE b.is_current=1 AND br.confidence IN ('HIGH','MEDIUM') ORDER BY b.name,br.score DESC"))
 
     @app.get("/use-cases")
     def use_cases():
@@ -324,6 +331,18 @@ def create_app(test_config=None):
           WHERE br.benchmark_id=? ORDER BY br.score DESC""", (benchmark["id"],))
         source = db().execute("SELECT * FROM sources WHERE id=?", (benchmark["source_id"],)).fetchone() if benchmark["source_id"] else None
         return render_template("benchmark_detail.html", title=f"{benchmark['name']} {benchmark['version']} benchmark", benchmark=benchmark, results=results, source=source, canonical_url=request.url_root.rstrip('/') + request.path, meta_description=f"{benchmark['name']} {benchmark['version']} methodology, metric-specific results, harness details, sources, and caveats.")
+
+    @app.get("/internal/data-quality")
+    def internal_data_quality():
+        from .data_quality import data_quality_metrics, review_triage, source_health_rows
+        return render_template(
+            "data_quality.html",
+            title="Internal data quality",
+            metrics=data_quality_metrics(db()),
+            triage=review_triage(db()),
+            source_health=source_health_rows(db()),
+            robots_meta="noindex,nofollow",
+        )
 
     @app.get("/use-cases/<use_case_slug>")
     def use_case_detail(use_case_slug):

@@ -10,7 +10,7 @@ from flask import Blueprint, Response, abort, jsonify, request, url_for
 
 from .db import get_db
 from .domain import compatibility_for
-from .query import offer_rows, route_rows
+from .query import offer_rows, openrouter_free_rows, route_rows
 
 public = Blueprint("public", __name__)
 API_VERSION = "v1"
@@ -46,7 +46,7 @@ def _route_json(row, compatibility=None):
         "model": {"id": row["model_id"], "name": row["canonical_name"],
                   "slug": row["canonical_slug"], "type": row["modality"],
                   "open_weights": bool(row["open_weights"]), "status": row["status"],
-                  "release_date": row["released_at"]},
+                  "release_date": row["released_at"], "identity_kind": row["identity_kind"]},
         "provider": {"id": row["provider_id"], "name": row["provider_name"],
                      "slug": slugify(row["provider_name"])},
         "limits": {"context": row["context_limit"], "max_output": row["max_output_tokens"]},
@@ -71,7 +71,8 @@ def _route_json(row, compatibility=None):
         "caveats": {"general": row["caveat"], "rate_limit": row["rate_limit_note"],
                     "privacy": row["privacy_caveat"]},
         "first_seen_at": row["first_seen_at"],
-        "last_verified_at": row["fetched_at"],
+        "last_verified_at": row["last_verified_at"] or row["fetched_at"],
+        "lifecycle_status": row["lifecycle_status"],
         "source": ({"name": row["route_source_name"], "url": row["route_source_url"]}
                    if row["route_source_url"] else None),
         "url": url_for("route_detail_slug", provider_slug=slugify(row["provider_name"]),
@@ -155,7 +156,7 @@ def api_index():
         "documentation": url_for("public.api_docs", _external=True),
         "response": {"data": "resource or list", "meta": {"api_version": "v1", "count": "integer"}},
         "endpoints": ["models", "models/{canonical-slug}", "providers", "harnesses",
-                      "offers", "releases", "benchmarks", "compatibility", "search"],
+                      "offers", "free-routes", "releases", "benchmarks", "compatibility", "search"],
     })
 
 
@@ -164,7 +165,7 @@ def api_docs():
     return Response("""<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width'>
 <title>Public API — UseThisModel</title><body><main><h1>UseThisModel public API v1</h1>
 <p>All endpoints are read-only JSON. Responses use <code>{&quot;data&quot;: …, &quot;meta&quot;: {&quot;api_version&quot;: &quot;v1&quot;, &quot;count&quot;: …}}</code>. Unknown values remain null or the explicit tri-state <code>UNKNOWN</code>.</p>
-<h2>Resources</h2><ul><li><code>GET /api/v1/models</code> and <code>/api/v1/models/{canonical-slug}</code></li><li><code>GET /api/v1/providers</code></li><li><code>GET /api/v1/harnesses</code></li><li><code>GET /api/v1/offers?status=current</code></li><li><code>GET /api/v1/releases?window=7-days</code></li><li><code>GET /api/v1/benchmarks</code></li><li><code>GET /api/v1/compatibility?harness=hermes-agent&amp;mcp=true</code></li><li><code>GET /api/v1/search?q=coding</code></li></ul>
+<h2>Resources</h2><ul><li><code>GET /api/v1/models</code> and <code>/api/v1/models/{canonical-slug}</code></li><li><code>GET /api/v1/providers</code></li><li><code>GET /api/v1/harnesses</code></li><li><code>GET /api/v1/offers?status=current</code></li><li><code>GET /api/v1/free-routes?tools=true</code></li><li><code>GET /api/v1/releases?window=7-days</code></li><li><code>GET /api/v1/benchmarks</code></li><li><code>GET /api/v1/compatibility?harness=hermes-agent&amp;mcp=true</code></li><li><code>GET /api/v1/search?q=coding</code></li></ul>
 <h2>Model and search filters</h2><p><code>tools=true</code>, <code>max_output_price=1</code>, <code>harness=hermes-agent</code>, <code>mcp=true</code>, <code>offers=current</code>, <code>releases=7-days</code>, <code>type=3d</code>, <code>provider=OpenRouter</code>, <code>min_context=1000000</code>, <code>free=true</code>, <code>open_weights=true</code>, and <code>limit=100</code> can be combined. Prices are USD per million tokens unless a media price includes a native unit.</p>
 <p><a href=/api/v1>Machine-readable API index</a> · <a href=/>UseThisModel</a></p></main></body></html>""", mimetype="text/html")
 
@@ -178,7 +179,8 @@ def api_models():
             "id": route["model_id"], "name": route["canonical_name"],
             "slug": route["canonical_slug"], "lab": route["lab_name"],
             "type": route["modality"], "open_weights": bool(route["open_weights"]),
-            "status": route["status"], "release_date": route["released_at"], "routes": []})
+            "status": route["status"], "release_date": route["released_at"],
+            "identity_kind": route["identity_kind"], "routes": []})
         model["routes"].append(_route_json(route, route.get("_compatibility")))
     return _envelope(list(grouped.values()), filters=filters)
 
@@ -193,6 +195,7 @@ def api_model(slug):
     model = {"id": row["id"], "name": first["canonical_name"], "slug": first["canonical_slug"],
              "type": first["modality"], "open_weights": bool(first["open_weights"]),
              "status": first["status"], "release_date": first["released_at"],
+             "identity_kind": first["identity_kind"],
              "routes": [_route_json(route) for route in routes]}
     return _envelope(model)
 
@@ -200,8 +203,10 @@ def api_model(slug):
 @public.get("/api/v1/providers")
 def api_providers():
     records = [dict(row) for row in get_db().execute("""SELECT p.id,p.name,p.website_url,
-      COUNT(o.id) route_count,MAX(o.fetched_at) last_verified_at FROM providers p
-      LEFT JOIN provider_offerings o ON o.provider_id=p.id GROUP BY p.id ORDER BY p.name""")]
+      COUNT(o.id) route_count,MAX(COALESCE(o.last_verified_at,o.fetched_at)) last_verified_at FROM providers p
+      LEFT JOIN providers alias ON alias.canonical_provider_id=p.id
+      LEFT JOIN provider_offerings o ON o.provider_id IN (p.id,alias.id)
+      WHERE p.canonical_provider_id IS NULL GROUP BY p.id ORDER BY p.name""")]
     for row in records:
         row["slug"] = slugify(row["name"])
     return _envelope(records)
@@ -224,6 +229,12 @@ def api_offers():
     include_expired = request.args.get("status") not in {None, "current", "active"}
     return _envelope(offer_rows(get_db(), include_expired=include_expired),
                      status="all" if include_expired else "current")
+
+
+@public.get("/api/v1/free-routes")
+def api_free_routes():
+    tools_only = _truth(request.args.get("tools"))
+    return _envelope(openrouter_free_rows(get_db(), tools_only), provider="OpenRouter", tools=tools_only)
 
 
 @public.get("/api/v1/releases")
