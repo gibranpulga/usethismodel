@@ -12,6 +12,10 @@ def _yes_capability(column: str) -> str:
 def route_rows(db, filters=None):
     """Return provider routes.  Every filter is explicit and URL-safe."""
     filters = filters or {}
+    try:
+        limit = min(250, max(1, int(filters.get("limit", 100))))
+    except (TypeError, ValueError):
+        limit = 100
     clauses, params = ["1=1"], []
     q = filters.get("q", "").strip()
     if q:
@@ -74,8 +78,9 @@ def route_rows(db, filters=None):
           LEFT JOIN labs l ON l.id=m.lab_id
         WHERE {' AND '.join(clauses)}
         ORDER BY input_price IS NULL, input_price, output_price, m.canonical_name, p.name
+        LIMIT ?
     """
-    return [dict(row) for row in db.execute(sql, params).fetchall()]
+    return [dict(row) for row in db.execute(sql, [*params, limit]).fetchall()]
 
 
 def filter_options(db):
