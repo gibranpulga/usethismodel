@@ -231,5 +231,12 @@
 {"id":230,"name":"Alibaba (China)","website_url":"https://www.alibabacloud.com/help/en/model-studio/models"},
 {"id":231,"name":"Nebius","website_url":null},
 {"id":232,"name":"Novita AI","website_url":null},
-{"id":233,"name":"SambaNova","website_url":null}
+{"id":233,"name":"SambaNova","website_url":null},
+{"id":234,"name":"Tripo API","website_url":"https://platform.tripo3d.ai/"},
+{"id":235,"name":"Meshy API","website_url":"https://www.meshy.ai/api"},
+{"id":236,"name":"Tencent Cloud","website_url":"https://cloud.tencent.com/"},
+{"id":237,"name":"Hyper3D API","website_url":"https://hyper3d.ai/"},
+{"id":238,"name":"Self-hosted","website_url":"https://github.com/"},
+{"id":239,"name":"Sloyd API","website_url":"https://www.sloyd.ai/api"},
+{"id":240,"name":"Hi3D API","website_url":"https://docs.hi3d.ai/"}
 ]

@@ -2,7 +2,105 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
+
+MODEL_CATEGORIES = {
+    "text": "text LLM",
+    "text llm": "text LLM",
+    "multimodal": "multimodal LLM",
+    "image": "image generation",
+    "image generation": "image generation",
+    "video": "video generation",
+    "video generation": "video generation",
+    "speech to text": "speech-to-text",
+    "stt": "speech-to-text",
+    "text to speech": "text-to-speech",
+    "tts": "text-to-speech",
+    "audio": "audio/music generation",
+    "music": "audio/music generation",
+    "embedding": "embedding",
+    "reranker": "reranker",
+    "3d": "3D generation",
+    "3d generation": "3D generation",
+}
+
+
+def interpret_search(filters):
+    """Translate common finder language into deterministic, shareable facets.
+
+    Explicit controls always win. Remaining words become the ordinary catalogue
+    text query; no LLM or opaque relevance score participates.
+    """
+    result = dict(filters or {})
+    raw = str(result.get("q", "")).strip()
+    if not raw:
+        return result, []
+    text = re.sub(r"[-_]", " ", raw.lower())
+    applied = []
+
+    def set_if_empty(key, value, label):
+        if not result.get(key):
+            result[key] = value
+            applied.append(label)
+
+    harnesses = {
+        "hermes": "Hermes Agent",
+        "opencode": "OpenCode",
+        "open code": "OpenCode",
+        "codex": "Codex CLI",
+        "pi": "Pi",
+    }
+    for phrase, harness in harnesses.items():
+        if re.search(rf"\b(?:works?\s+with\s+)?{re.escape(phrase)}\b", text):
+            set_if_empty("harness", harness, f"Harness: {harness}")
+            text = re.sub(rf"\b(?:works?\s+with\s+)?{re.escape(phrase)}\b", " ", text)
+            break
+    if re.search(r"\bfree\b|\$0", text):
+        set_if_empty("free", "1", "Price: $0 route")
+        text = re.sub(r"\bfree\b|\$0", " ", text)
+    if re.search(r"\btools?\b|tool[ -]?capable|function calling", text):
+        set_if_empty("tools", "1", "Tool calling: yes")
+        text = re.sub(r"\btools?\b|tool[ -]?capable|function calling", " ", text)
+    if "openrouter" in text:
+        set_if_empty("access", "openrouter", "Access: OpenRouter")
+        text = text.replace("openrouter", " ")
+    if re.search(r"\b1m\b|1\s*million", text) and "context" in text:
+        set_if_empty("context", "1000000", "Context: 1M+")
+        text = re.sub(r"\b1m\b|1\s*million|context", " ", text)
+    if re.search(r"open\s+(?:source|weights?)", text):
+        set_if_empty("open_weights", "1", "Open weights")
+        text = re.sub(r"open\s+(?:source|weights?)", " ", text)
+    if "agentic coding" in text:
+        set_if_empty("use_case", "agentic-coding", "Use case: agentic coding")
+        text = text.replace("agentic coding", " ")
+    elif re.search(r"\bcoding\b", text):
+        set_if_empty("use_case", "coding", "Use case: coding")
+        text = re.sub(r"\bcoding\b", " ", text)
+    if re.search(r"\bcheap(?:est)?\b|best value", text):
+        set_if_empty("sort", "value", "Sort: best value")
+        text = re.sub(r"\bcheap(?:est)?\b|best value", " ", text)
+    if "commercial use" in text:
+        set_if_empty("commercial", "1", "Commercial use: available")
+        text = text.replace("commercial use", " ")
+    if "price per generation" in text or "per generation" in text:
+        set_if_empty("price_unit", "per_generation", "Price unit: per generation")
+        text = text.replace("price per generation", " ").replace("per generation", " ")
+    media_phrases = ["text to 3d", "image to 3d", "image generation", "video generation", "3d generation", "3d", "audio"]
+    for phrase in media_phrases:
+        if phrase in text:
+            if phrase == "text to 3d":
+                set_if_empty("type", "3D generation", "Category: 3D generation")
+                set_if_empty("text_to_3d", "1", "Text-to-3D: yes")
+            elif phrase == "image to 3d":
+                set_if_empty("type", "3D generation", "Category: 3D generation")
+                set_if_empty("image_to_3d", "1", "Image-to-3D: yes")
+            else:
+                set_if_empty("type", MODEL_CATEGORIES[phrase], f"Category: {MODEL_CATEGORIES[phrase]}")
+            text = text.replace(phrase, " ")
+            break
+    result["q"] = re.sub(r"\s+", " ", text).strip()
+    return result, applied
 
 
 def _yes_capability(column: str) -> str:
@@ -11,12 +109,21 @@ def _yes_capability(column: str) -> str:
 
 def route_rows(db, filters=None):
     """Return provider routes.  Every filter is explicit and URL-safe."""
-    filters = filters or {}
+    filters, _ = interpret_search(filters or {})
     try:
-        limit = min(250, max(1, int(filters.get("limit", 100))))
+        limit = min(10_000, max(1, int(filters.get("limit", 100))))
     except (TypeError, ValueError):
         limit = 100
     clauses, params = ["1=1"], []
+    if filters.get("offering_id") is not None:
+        clauses.append("o.id=?")
+        params.append(int(filters["offering_id"]))
+    if filters.get("model_id") is not None:
+        clauses.append("m.id=?")
+        params.append(int(filters["model_id"]))
+    if filters.get("provider_id") is not None:
+        clauses.append("p.id=?")
+        params.append(int(filters["provider_id"]))
     q = filters.get("q", "").strip()
     if q:
         clauses.append("(lower(m.canonical_name) LIKE ? OR lower(o.api_model_id) LIKE ? OR lower(p.name) LIKE ? OR lower(COALESCE(l.name,m.vendor)) LIKE ?)")
@@ -30,16 +137,24 @@ def route_rows(db, filters=None):
         params.append((date.today() - timedelta(days=7)).isoformat())
     for key, field in (("input_max", "input_price"), ("output_max", "output_price")):
         if filters.get(key):
+            try:
+                value = float(filters[key])
+            except (TypeError, ValueError):
+                continue
             clauses.append(f"{field} IS NOT NULL AND {field} <= ?")
-            params.append(float(filters[key]))
+            params.append(value)
     for key, column in (("context", "o.context_limit"), ("max_output", "o.max_output_tokens")):
         if filters.get(key):
+            try:
+                value = int(filters[key])
+            except (TypeError, ValueError):
+                continue
             clauses.append(f"{column} >= ?")
-            params.append(int(filters[key]))
+            params.append(value)
     if filters.get("free") == "1":
         clauses.append("(input_price=0 AND output_price=0)")
     if filters.get("deal") == "1":
-        clauses.append("EXISTS (SELECT 1 FROM offers x WHERE x.provider_id=p.id AND x.status='ACTIVE' AND (x.ends_at IS NULL OR x.ends_at>=date('now')))")
+        clauses.append("EXISTS (SELECT 1 FROM offers x WHERE x.provider_id=p.id AND (x.offering_id IS NULL OR x.offering_id=o.id) AND x.status='ACTIVE' AND (x.starts_at IS NULL OR x.starts_at<=date('now')) AND (x.ends_at IS NULL OR x.ends_at>=date('now')))")
     if filters.get("subscription") == "1":
         clauses.append("EXISTS (SELECT 1 FROM plans pl WHERE pl.provider_id=p.id)")
     if filters.get("tools") == "1":
@@ -48,6 +163,14 @@ def route_rows(db, filters=None):
         clauses.append("o.structured_output_support='YES'")
     if filters.get("open_weights") == "1":
         clauses.append("m.open_weights=1")
+    if filters.get("commercial") == "1":
+        clauses.append("o.commercial_use IN ('YES','CONDITIONAL')")
+    if filters.get("price_unit"):
+        clauses.append("EXISTS (SELECT 1 FROM pricing_records pu WHERE pu.offering_id=o.id AND pu.valid_until IS NULL AND pu.unit=?)")
+        params.append(filters["price_unit"])
+    for key, column in (("text_to_3d", "text_to_3d"), ("image_to_3d", "image_to_3d")):
+        if filters.get(key) == "1":
+            clauses.append(f"EXISTS (SELECT 1 FROM model_media_features mf WHERE mf.model_id=m.id AND mf.{column}='YES')")
     for key, capability in (("reasoning", "reasoning"), ("vision", "vision"), ("caching", "caching"), ("batch", "batch")):
         if filters.get(key) == "1":
             clauses.append(_yes_capability(capability))
@@ -66,21 +189,37 @@ def route_rows(db, filters=None):
     sql = f"""
         SELECT o.id offering_id,o.api_model_id,o.context_limit,o.max_output_tokens,o.tool_support,
           o.structured_output_support,o.free_status,o.caveat,o.fetched_at,m.id model_id,
+          o.rate_limit_note,o.privacy_caveat,o.commercial_use,o.first_seen_at,
           m.canonical_name,m.canonical_slug,m.modality,m.open_weights,m.status,m.released_at,
           COALESCE(l.name,m.vendor) lab_name,p.id provider_id,p.name provider_name,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) input_price,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='OUTPUT' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) output_price,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='CACHE_READ' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) cache_read_price,
+          (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type NOT IN ('INPUT','OUTPUT','CACHE_READ','CACHE_WRITE','BATCH_INPUT','BATCH_OUTPUT') AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) media_price,
+          (SELECT unit FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type NOT IN ('INPUT','OUTPUT','CACHE_READ','CACHE_WRITE','BATCH_INPUT','BATCH_OUTPUT') AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) media_price_unit,
+          (SELECT price_type FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type NOT IN ('INPUT','OUTPUT','CACHE_READ','CACHE_WRITE','BATCH_INPUT','BATCH_OUTPUT') AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) media_price_type,
           {_yes_capability('reasoning')} reasoning, {_yes_capability('vision')} vision,
           {_yes_capability('caching')} caching, {_yes_capability('batch')} batch,
-          EXISTS (SELECT 1 FROM offers x WHERE x.provider_id=p.id AND x.status='ACTIVE' AND (x.ends_at IS NULL OR x.ends_at>=date('now'))) active_deal
+          EXISTS (SELECT 1 FROM offers x WHERE x.provider_id=p.id AND (x.offering_id IS NULL OR x.offering_id=o.id) AND x.status='ACTIVE' AND (x.starts_at IS NULL OR x.starts_at<=date('now')) AND (x.ends_at IS NULL OR x.ends_at>=date('now'))) active_deal
         FROM provider_offerings o JOIN models m ON m.id=o.model_id JOIN providers p ON p.id=o.provider_id
           LEFT JOIN labs l ON l.id=m.lab_id
         WHERE {' AND '.join(clauses)}
-        ORDER BY input_price IS NULL, input_price, output_price, m.canonical_name, p.name
+        ORDER BY
+          CASE WHEN ?='value' THEN CASE WHEN input_price IS NULL OR output_price IS NULL THEN 1 ELSE 0 END ELSE 0 END,
+          CASE WHEN ?='value' THEN (0.7*input_price + 0.3*output_price) END,
+          CASE WHEN ?='newest' THEN m.released_at END DESC,
+          media_price IS NULL, input_price IS NULL, COALESCE(media_price,input_price), output_price, m.canonical_name, p.name
         LIMIT ?
     """
-    return [dict(row) for row in db.execute(sql, [*params, limit]).fetchall()]
+    sort = filters.get("sort", "price")
+    result = [dict(row) for row in db.execute(sql, [*params, sort, sort, sort, limit]).fetchall()]
+    for row in result:
+        row["value_score"] = (
+            0.7 * row["input_price"] + 0.3 * row["output_price"]
+            if row["input_price"] is not None and row["output_price"] is not None
+            else None
+        )
+    return result
 
 
 def filter_options(db):
@@ -93,18 +232,115 @@ def filter_options(db):
     }
 
 
+def price_history(db, offering_id):
+    rows = [dict(r) for r in db.execute(
+        """SELECT pr.*,s.name source_name,s.url source_url
+           FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id
+           WHERE pr.offering_id=? ORDER BY pr.price_type,pr.valid_from DESC,pr.id DESC""",
+        (offering_id,),
+    )]
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row["price_type"], []).append(row)
+    summaries = []
+    for price_type, records in grouped.items():
+        current = next((r for r in records if r["valid_until"] is None), records[0])
+        previous = next((r for r in records if r["id"] != current["id"] and (r["valid_until"] is not None or r["amount"] != current["amount"])), None)
+        prior = previous["amount"] if previous else None
+        change = ((current["amount"] - prior) / prior * 100) if prior not in (None, 0) else None
+        summaries.append({
+            "price_type": price_type,
+            "unit": current["unit"],
+            "currency": current["currency"],
+            "current": current["amount"],
+            "previous": prior,
+            "change_percent": change,
+            "date_changed": current["valid_from"],
+            "lowest": min(r["amount"] for r in records),
+            "records": records,
+        })
+    return sorted(summaries, key=lambda item: item["price_type"])
+
+
+def offer_rows(db, include_expired=False):
+    condition = "1=1" if include_expired else "x.status='ACTIVE' AND (x.starts_at IS NULL OR x.starts_at<=date('now')) AND (x.ends_at IS NULL OR x.ends_at>=date('now'))"
+    return [dict(r) for r in db.execute(f"""
+      SELECT x.*,p.name provider_name,o.api_model_id,m.canonical_name,o.tool_support,
+        o.context_limit,o.rate_limit_note,o.privacy_caveat route_privacy_caveat
+      FROM offers x JOIN providers p ON p.id=x.provider_id
+      LEFT JOIN provider_offerings o ON o.id=x.offering_id
+      LEFT JOIN models m ON m.id=o.model_id
+      WHERE {condition}
+      ORDER BY x.status='ACTIVE' DESC,x.last_verified_at DESC,p.name,x.title
+    """).fetchall()]
+
+
+def pricing_differences(db):
+    cache = [dict(r) for r in db.execute("""
+      SELECT o.id offering_id,m.canonical_name,p.name provider_name,
+        i.amount input_price,c.amount discounted_price,'Cache read' discount_type,
+        ROUND((1-c.amount/i.amount)*100,1) savings_percent,s.url source_url
+      FROM provider_offerings o JOIN models m ON m.id=o.model_id JOIN providers p ON p.id=o.provider_id
+      JOIN pricing_records i ON i.id=(SELECT id FROM pricing_records WHERE offering_id=o.id AND price_type='INPUT' AND valid_until IS NULL ORDER BY valid_from DESC,id DESC LIMIT 1)
+      JOIN pricing_records c ON c.id=(SELECT id FROM pricing_records WHERE offering_id=o.id AND price_type='CACHE_READ' AND valid_until IS NULL ORDER BY valid_from DESC,id DESC LIMIT 1)
+      LEFT JOIN sources s ON s.id=c.source_id WHERE i.amount>0 AND c.amount<i.amount
+      ORDER BY savings_percent DESC LIMIT 50
+    """).fetchall()]
+    direct = [dict(r) for r in db.execute("""
+      SELECT m.canonical_name,d.id direct_id,dp.name direct_provider,di.amount direct_input,
+        a.id aggregator_id,ai.amount aggregator_input,
+        ROUND(ai.amount-di.amount,4) difference
+      FROM models m JOIN provider_offerings d ON d.model_id=m.id
+      JOIN providers dp ON dp.id=d.provider_id AND dp.name!='OpenRouter'
+      JOIN provider_offerings a ON a.model_id=m.id JOIN providers ap ON ap.id=a.provider_id AND ap.name='OpenRouter'
+      JOIN pricing_records di ON di.id=(SELECT id FROM pricing_records WHERE offering_id=d.id AND price_type='INPUT' AND valid_until IS NULL ORDER BY valid_from DESC,id DESC LIMIT 1)
+      JOIN pricing_records ai ON ai.id=(SELECT id FROM pricing_records WHERE offering_id=a.id AND price_type='INPUT' AND valid_until IS NULL ORDER BY valid_from DESC,id DESC LIMIT 1)
+      ORDER BY ABS(ai.amount-di.amount) DESC LIMIT 50
+    """).fetchall()]
+    return {"discounts": cache, "direct": direct}
+
+
+def ranking_groups(db):
+    """Factual lists with an explicit metric; never a universal model score."""
+    routes = route_rows(db, {"limit": 250})
+    benchmark = [dict(r) for r in db.execute("""
+      SELECT b.name,b.version,b.category,br.metric,br.score,br.confidence,m.id model_id,
+        m.canonical_name,s.name source_name,s.url source_url
+      FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id
+      JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
+      ORDER BY br.score DESC LIMIT 12
+    """).fetchall()]
+    coding = [r for r in benchmark if "cod" in (r["category"] or "").lower()]
+    value = [r for r in route_rows(db, {"tools": "1", "use_case": "coding", "sort": "value", "limit": 8}) if r["value_score"] is not None]
+    cheapest = [r for r in route_rows(db, {"tools": "1", "limit": 8}) if r["input_price"] is not None]
+    return [
+        {"title": "Strong general models", "metric": "Recorded benchmark score (descending); benchmark versions are shown.", "kind": "benchmark", "rows": benchmark[:8]},
+        {"title": "Strong coding models", "metric": "Recorded coding or agent benchmark score (descending).", "kind": "benchmark", "rows": coding[:8]},
+        {"title": "Best-value coding", "metric": "0.70 × input $/M + 0.30 × output $/M, among recorded coding routes with tools.", "kind": "route", "rows": value},
+        {"title": "Cheapest tool-capable routes", "metric": "Current input $/M, then output $/M; no quality score.", "kind": "route", "rows": cheapest},
+        {"title": "Free models with tools", "metric": "Exact routes with current input and output prices both recorded as $0 and tool calling=YES.", "kind": "route", "rows": route_rows(db, {"free": "1", "tools": "1", "limit": 8})},
+        {"title": "Long-context + tools", "metric": "Documented context window descending, with tool calling=YES.", "kind": "route", "rows": sorted([r for r in routes if r["tool_support"] == "YES"], key=lambda r: r["context_limit"] or 0, reverse=True)[:8]},
+    ]
+
+
 def source_rows(db, offering_id=None, model_id=None):
-    where, params = [], []
+    source_queries, params = [], []
     if offering_id:
-        where.append("(o.id=? OR pr.offering_id=? OR oc.offering_id=?)")
+        source_queries.extend([
+            "SELECT source_id FROM provider_offerings WHERE id=?",
+            "SELECT source_id FROM pricing_records WHERE offering_id=?",
+            "SELECT source_id FROM offering_capabilities WHERE offering_id=?",
+        ])
         params += [offering_id] * 3
     if model_id:
-        where.append("(o.model_id=? OR br.model_id=?)")
+        source_queries.extend([
+            "SELECT source_id FROM provider_offerings WHERE model_id=?",
+            "SELECT source_id FROM benchmark_results WHERE model_id=?",
+        ])
         params += [model_id] * 2
-    condition = " AND ".join(where) if where else "1=1"
-    return [dict(r) for r in db.execute(f"""
-      SELECT DISTINCT s.name,s.url,s.reliability FROM sources s
-      LEFT JOIN provider_offerings o ON o.source_id=s.id LEFT JOIN pricing_records pr ON pr.source_id=s.id
-      LEFT JOIN offering_capabilities oc ON oc.source_id=s.id LEFT JOIN benchmark_results br ON br.source_id=s.id
-      WHERE {condition} ORDER BY s.name
-    """, params).fetchall()]
+    if not source_queries:
+        return [dict(r) for r in db.execute("SELECT name,url,reliability FROM sources ORDER BY name")]
+    ids = " UNION ".join(source_queries)
+    return [dict(r) for r in db.execute(
+        f"SELECT name,url,reliability FROM sources WHERE id IN ({ids}) ORDER BY name", params
+    ).fetchall()]

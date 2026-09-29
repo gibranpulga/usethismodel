@@ -6,7 +6,9 @@ It treats route pricing and capabilities as route-specific facts, MCP as a
 harness capability, and benchmarks as separate objective measurements.
 
 The route finder uses a source-backed SQLite catalog with a deterministic daily
-maintenance pipeline. This stage maintains data; it adds no new product workflows.
+maintenance pipeline. Discovery includes route-scoped offers, factual rankings,
+deterministic quick-search facets, media-native pricing, price history, and local-only
+pins/setup preferences.
 
 ## Stack
 
@@ -70,6 +72,10 @@ requirements.txt     Runtime dependencies
   provider access, route protocol support and model behavior.
 - Benchmarks stay separate from recommendations, with source and method
   attached to measurements.
+- Media generation prices keep their native units (image, second, audio minute,
+  video, generation, or 3D generation) rather than being converted to tokens.
+- Personal setup, pins, and saved comparisons stay in browser storage. API keys
+  are never requested or stored.
 
 See [the landscape research](docs/landscape-research.md) for the initial
 competitor, data source and benchmark review.

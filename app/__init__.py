@@ -5,9 +5,18 @@ from flask import Flask, abort, jsonify, render_template, request
 
 from .db import init_db
 from .domain import compatibility_for
-from .query import filter_options, route_rows, source_rows
+from .query import (
+    filter_options,
+    interpret_search,
+    offer_rows,
+    price_history,
+    pricing_differences,
+    ranking_groups,
+    route_rows,
+    source_rows,
+)
 
-NAV = [("Home", "/"), ("Models", "/models"), ("Providers", "/providers"), ("Harnesses", "/harnesses"), ("Compatibility", "/compatibility"), ("Offers", "/offers"), ("New Releases", "/new-releases"), ("Benchmarks", "/benchmarks"), ("Use Cases", "/use-cases"), ("Compare", "/compare"), ("Calculator", "/calculator")]
+NAV = [("Home", "/"), ("Models", "/models"), ("Rankings", "/rankings"), ("Offers", "/offers"), ("Providers", "/providers"), ("Harnesses", "/harnesses"), ("Compatibility", "/compatibility"), ("My Setup", "/my-setup"), ("New Releases", "/new-releases"), ("Benchmarks", "/benchmarks"), ("Use Cases", "/use-cases"), ("Compare", "/compare"), ("Calculator", "/calculator")]
 PRESETS = {
     "free-tools": ("Free + Tools", {"free": "1", "tools": "1"}), "cheap-agent": ("Cheapest Agent Models", {"tools": "1", "use_case": "agentic-coding"}),
     "strong-coding": ("Strong Coding", {"tools": "1", "use_case": "coding"}), "best-value-coding": ("Best Value Coding", {"tools": "1", "use_case": "coding", "sort": "value"}),
@@ -44,21 +53,36 @@ def create_app(test_config=None):
     def finder_filters():
         return {key: value for key, value in request.args.items() if value not in ("", "any", None)}
 
+    def interpreted_filters():
+        return interpret_search(finder_filters())
+
     def compatible_routes(filters):
-        result = route_rows(db(), filters)
-        harness_name = filters.get("harness")
-        if not harness_name:
+        harness_names = [name for name in filters.get("harnesses", "").split(",") if name]
+        if filters.get("harness"):
+            harness_names.insert(0, filters["harness"])
+        harness_names = list(dict.fromkeys(harness_names))
+        try:
+            requested_limit = min(250, max(1, int(filters.get("limit", 100))))
+        except (TypeError, ValueError):
+            requested_limit = 100
+        query_filters = {**filters, "limit": 10_000} if harness_names else filters
+        result = route_rows(db(), query_filters)
+        if not harness_names:
             return result
-        harness = db().execute("SELECT id FROM harnesses WHERE name=?", (harness_name,)).fetchone()
-        if not harness:
+        harnesses = [db().execute("SELECT id,name FROM harnesses WHERE name=?", (name,)).fetchone() for name in harness_names]
+        if any(not harness for harness in harnesses):
             return []
         kept = []
         for route in result:
-            match = compatibility_for(db(), harness["id"], route["offering_id"], filters.get("mcp") == "1")
-            route["compatibility"] = match
-            if match["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}:
+            matches = [(harness["name"], compatibility_for(db(), harness["id"], route["offering_id"], filters.get("mcp") == "1")) for harness in harnesses]
+            allowed = {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}
+            if all(match["status"] in allowed for _, match in matches):
+                match = matches[0][1]
+                if len(matches) > 1:
+                    match = {**match, "explanation": " ".join(f"{name}: {value['explanation']}" for name, value in matches)}
+                route["compatibility"] = match
                 kept.append(route)
-        return kept
+        return kept[:requested_limit]
 
     @app.get("/health")
     def health():
@@ -67,20 +91,20 @@ def create_app(test_config=None):
 
     @app.get("/")
     def home():
-        filters = finder_filters()
-        return render_template("index.html", filters=filters, options=filter_options(db()), routes=compatible_routes(filters)[:6])
+        filters, interpreted = interpreted_filters()
+        return render_template("index.html", title="Route finder", filters=filters, interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters)[:6])
 
     @app.get("/models")
     def models():
-        filters = finder_filters()
-        return render_template("models.html", title="Models & provider routes", filters=filters, options=filter_options(db()), routes=compatible_routes(filters))
+        filters, interpreted = interpreted_filters()
+        return render_template("models.html", title="Models & provider routes", filters=filters, interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters))
 
     @app.get("/models/<int:model_id>")
     def model_detail(model_id):
         model = db().execute("SELECT m.*,l.name lab_name FROM models m LEFT JOIN labs l ON l.id=m.lab_id WHERE m.id=?", (model_id,)).fetchone()
         if not model:
             abort(404)
-        offerings = [o for o in route_rows(db(), {"q": model["canonical_name"]}) if o["model_id"] == model_id]
+        offerings = route_rows(db(), {"model_id": model_id, "limit": 250})
         use_cases = rows("SELECT u.name,mus.classification,mus.rationale,mus.confidence FROM model_use_case_scores mus JOIN use_cases u ON u.id=mus.use_case_id WHERE mus.model_id=? ORDER BY u.name", (model_id,))
         benchmarks = rows("SELECT b.name,b.version,br.score,br.metric,br.confidence FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id WHERE br.model_id=? ORDER BY b.name", (model_id,))
         harnesses = []
@@ -89,7 +113,17 @@ def create_app(test_config=None):
             supported = [x for x in supported if x["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}]
             if supported:
                 harnesses.append({"name": harness["name"], **supported[0]})
-        return render_template("model_detail.html", title=model["canonical_name"], item=dict(model), offerings=offerings, use_cases=use_cases, benchmarks=benchmarks, harnesses=harnesses, sources=source_rows(db(), model_id=model_id))
+        media = db().execute("SELECT * FROM model_media_features WHERE model_id=?", (model_id,)).fetchone()
+        return render_template("model_detail.html", title=model["canonical_name"], item=dict(model), offerings=offerings, use_cases=use_cases, benchmarks=benchmarks, harnesses=harnesses, media=dict(media) if media else None, sources=source_rows(db(), model_id=model_id))
+
+    @app.get("/routes/<int:offering_id>")
+    def route_detail(offering_id):
+        route = next(iter(route_rows(db(), {"offering_id": offering_id})), None)
+        if not route:
+            abort(404)
+        peers = route_rows(db(), {"model_id": route["model_id"], "limit": 250})
+        offers = [o for o in offer_rows(db(), include_expired=True) if o["offering_id"] in (None, offering_id) and o["provider_id"] == route["provider_id"]]
+        return render_template("route_detail.html", title=f"{route['canonical_name']} via {route['provider_name']}", route=route, history=price_history(db(), offering_id), peers=peers, offers=offers, sources=source_rows(db(), offering_id=offering_id))
 
     @app.get("/providers")
     def providers():
@@ -101,7 +135,7 @@ def create_app(test_config=None):
         provider = db().execute("SELECT * FROM providers WHERE id=?", (provider_id,)).fetchone()
         if not provider:
             abort(404)
-        routes = [r for r in route_rows(db()) if r["provider_id"] == provider_id]
+        routes = route_rows(db(), {"provider_id": provider_id, "limit": 250})
         return render_template("provider_detail.html", title=provider["name"], provider=provider, routes=routes, plans=rows("SELECT * FROM plans WHERE provider_id=?", (provider_id,)), offers=rows("SELECT * FROM offers WHERE provider_id=? ORDER BY status,ends_at", (provider_id,)), sources=source_rows(db(), offering_id=routes[0]["offering_id"]) if routes else [])
 
     @app.get("/harnesses")
@@ -123,14 +157,17 @@ def create_app(test_config=None):
 
     @app.get("/compatibility")
     def compatibility():
-        filters = finder_filters()
-        return render_template("compatibility.html", title="Compatibility finder", filters=filters, options=filter_options(db()), routes=compatible_routes(filters) if filters.get("harness") else [])
+        filters, interpreted = interpreted_filters()
+        return render_template("compatibility.html", title="Compatibility finder", filters=filters, interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters) if filters.get("harness") else [])
 
     @app.get("/compare")
     def compare():
-        ids = [int(value) for value in request.args.get("ids", "").split(",") if value.isdigit()][:5]
+        raw_ids = request.args.getlist("ids")
+        ids = [int(value) for raw in raw_ids for value in raw.split(",") if value.isdigit()][:5]
         all_routes = route_rows(db())
-        return render_template("compare.html", title="Compare routes", routes=[r for r in all_routes if r["offering_id"] in ids], all_routes=all_routes)
+        selected = [r for r in all_routes if r["offering_id"] in ids]
+        histories = {r["offering_id"]: price_history(db(), r["offering_id"]) for r in selected}
+        return render_template("compare.html", title="Compare routes", routes=selected, all_routes=all_routes, histories=histories)
 
     @app.get("/calculator")
     def calculator():
@@ -150,7 +187,19 @@ def create_app(test_config=None):
 
     @app.get("/offers")
     def offers():
-        return render_template("offers.html", title="Offers", offers=rows("SELECT x.*,p.name provider_name FROM offers x JOIN providers p ON p.id=x.provider_id WHERE x.status='ACTIVE' AND (x.ends_at IS NULL OR x.ends_at>=date('now')) ORDER BY p.name"))
+        differences = pricing_differences(db())
+        return render_template("offers.html", title="Offers & deals", offers=offer_rows(db()), expired=offer_rows(db(), include_expired=True), discounts=differences["discounts"], direct_differences=differences["direct"])
+
+    @app.get("/rankings")
+    def rankings():
+        harness_rankings = rows("""SELECT *, CASE open_source WHEN 'YES' THEN 1 ELSE 0 END open_source_value,
+          CASE supports_mcp WHEN 1 THEN 1 ELSE 0 END mcp_value
+          FROM harnesses ORDER BY mcp_value DESC,open_source_value DESC,name""")
+        return render_template("rankings.html", title="Factual rankings", groups=ranking_groups(db()), harnesses=harness_rankings)
+
+    @app.get("/my-setup")
+    def my_setup():
+        return render_template("my_setup.html", title="My Setup", harnesses=rows("SELECT id,name,interfaces,open_source,supports_mcp FROM harnesses ORDER BY name"))
 
     @app.get("/new-releases")
     def releases():

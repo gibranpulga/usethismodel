@@ -7,5 +7,21 @@
 {"fetched_at":"2026-09-29 15:14:19","id":6,"name":"SWE-bench","reliability":"HIGH","source_type":"benchmark","url":"https://www.swebench.com/"},
 {"fetched_at":"2026-09-29 15:14:19","id":7,"name":"Terminal-Bench","reliability":"HIGH","source_type":"benchmark","url":"https://www.tbench.ai/"},
 {"fetched_at":"2026-09-29 15:14:19","id":8,"name":"Artificial Analysis Intelligence Index","reliability":"HIGH","source_type":"benchmark","url":"https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index"},
-{"fetched_at":"2026-09-29 15:55:44","id":9,"name":"litellm","reliability":"MEDIUM","source_type":"machine-readable catalog","url":"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"}
+{"fetched_at":"2026-09-29 15:55:44","id":9,"name":"litellm","reliability":"MEDIUM","source_type":"machine-readable catalog","url":"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"},
+{"fetched_at":"2026-09-29 19:54:09","id":10,"name":"OpenRouter Free Models Router","reliability":"HIGH","source_type":"official_provider","url":"https://openrouter.ai/openrouter/free/apps"},
+{"fetched_at":"2026-09-29 19:54:09","id":11,"name":"OpenRouter pricing and rate limits","reliability":"HIGH","source_type":"official_provider","url":"https://openrouter.ai/pricing/"},
+{"fetched_at":"2026-09-29 19:54:09","id":12,"name":"OpenAI Batch API","reliability":"HIGH","source_type":"official_docs","url":"https://platform.openai.com/docs/api-reference/batch/object"},
+{"fetched_at":"2026-09-29 19:54:09","id":13,"name":"Tripo H3.1 documentation","reliability":"HIGH","source_type":"official_docs","url":"https://developers.tripo3d.ai/de/models/v3-1"},
+{"fetched_at":"2026-09-29 19:54:09","id":14,"name":"Tripo P1 documentation","reliability":"HIGH","source_type":"official_docs","url":"https://developers.tripo3d.ai/en/models/p1"},
+{"fetched_at":"2026-09-29 19:54:09","id":15,"name":"Meshy 7.1 announcement","reliability":"HIGH","source_type":"official_announcement","url":"https://www.meshy.ai/blog/meshy-7-1-launch"},
+{"fetched_at":"2026-09-29 19:54:09","id":16,"name":"Meshy API pricing","reliability":"HIGH","source_type":"official_provider","url":"https://www.meshy.ai/api"},
+{"fetched_at":"2026-09-29 19:54:09","id":17,"name":"Hunyuan 3D 3.1 documentation","reliability":"HIGH","source_type":"official_docs","url":"https://cloud.tencent.com/document/product/1823/130051"},
+{"fetched_at":"2026-09-29 19:54:09","id":18,"name":"Tencent Cloud 3D pricing","reliability":"HIGH","source_type":"official_provider","url":"https://intl.cloud.tencent.com/document/product/1041/49204?lang=en&pg="},
+{"fetched_at":"2026-09-29 19:54:09","id":19,"name":"Hunyuan3D 2.1 repository","reliability":"HIGH","source_type":"official_metadata","url":"https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1"},
+{"fetched_at":"2026-09-29 19:54:09","id":20,"name":"Rodin Gen-2.5 API","reliability":"HIGH","source_type":"official_docs","url":"https://docs.hyper3d.ai/en/api-specification/rodin-gen2-5"},
+{"fetched_at":"2026-09-29 19:54:09","id":21,"name":"TRELLIS.2 repository","reliability":"HIGH","source_type":"official_metadata","url":"https://github.com/microsoft/TRELLIS.2"},
+{"fetched_at":"2026-09-29 19:54:09","id":22,"name":"SPAR3D repository","reliability":"HIGH","source_type":"official_metadata","url":"https://github.com/Stability-AI/stable-point-aware-3d"},
+{"fetched_at":"2026-09-29 19:54:09","id":23,"name":"Sloyd API pricing","reliability":"HIGH","source_type":"official_provider","url":"https://www.sloyd.ai/api/pricing"},
+{"fetched_at":"2026-09-29 19:54:09","id":24,"name":"Hi3D API pricing","reliability":"HIGH","source_type":"official_provider","url":"https://docs.hi3d.ai/en/api/getting-started/pricing"},
+{"fetched_at":"2026-09-29 19:54:09","id":25,"name":"3D Arena paper","reliability":"HIGH","source_type":"benchmark_publisher","url":"https://arxiv.org/abs/2506.18787"}
 ]

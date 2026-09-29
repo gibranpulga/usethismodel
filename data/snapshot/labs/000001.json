@@ -37,5 +37,13 @@
 {"id":1036,"name":"Venice","source_id":2,"website_url":null},
 {"id":1037,"name":"Nebius","source_id":9,"website_url":null},
 {"id":1038,"name":"Sambanova","source_id":9,"website_url":null},
-{"id":1039,"name":"Togetherai","source_id":9,"website_url":null}
+{"id":1039,"name":"Togetherai","source_id":9,"website_url":null},
+{"id":1040,"name":"Tripo AI","source_id":null,"website_url":"https://www.tripo3d.ai/"},
+{"id":1041,"name":"Meshy","source_id":null,"website_url":"https://www.meshy.ai/"},
+{"id":1042,"name":"Tencent Hunyuan","source_id":null,"website_url":"https://hunyuan.tencent.com/"},
+{"id":1043,"name":"Hyper3D","source_id":null,"website_url":"https://hyper3d.ai/"},
+{"id":1044,"name":"Microsoft Research","source_id":null,"website_url":"https://www.microsoft.com/research/"},
+{"id":1045,"name":"Stability AI","source_id":null,"website_url":"https://stability.ai/"},
+{"id":1046,"name":"Sloyd","source_id":null,"website_url":"https://www.sloyd.ai/"},
+{"id":1047,"name":"Hi3D","source_id":null,"website_url":"https://www.hi3d.ai/"}
 ]

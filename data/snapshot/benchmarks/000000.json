@@ -2,5 +2,6 @@
 {"category":"General/Reasoning/Coding","description":null,"id":1,"name":"LiveBench","source_id":5,"version":"2025-02"},
 {"category":"Coding agent","description":null,"id":2,"name":"SWE-bench Verified","source_id":6,"version":"500-instance human-filtered subset"},
 {"category":"Agentic coding","description":null,"id":3,"name":"Terminal-Bench","source_id":7,"version":"2.0"},
-{"category":"General/Reasoning/Coding/Agents","description":null,"id":4,"name":"Artificial Analysis Intelligence Index","source_id":8,"version":"4.3.2"}
+{"category":"General/Reasoning/Coding/Agents","description":null,"id":4,"name":"Artificial Analysis Intelligence Index","source_id":8,"version":"4.3.2"},
+{"category":"3D generation","description":"Pairwise human-preference benchmark. Presentation format materially affects Elo; do not interpret it as topology or production-readiness quality.","id":5,"name":"3D Arena","source_id":25,"version":"2025 paper"}
 ]
