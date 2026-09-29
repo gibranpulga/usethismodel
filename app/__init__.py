@@ -62,7 +62,7 @@ def create_app(test_config=None):
 
     @app.get("/health")
     def health():
-        db().execute("SELECT 1").fetchone()
+        db().execute("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").fetchone()
         return jsonify(status="ok", database="sqlite")
 
     @app.get("/")
