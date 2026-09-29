@@ -289,3 +289,21 @@ def test_invalid_preexisting_import_data_is_preserved_as_quarantined_evidence(db
     assert db.execute('SELECT context_limit FROM provider_offerings WHERE id=?', (oid,)).fetchone()[0] is None
     assert db.execute('SELECT 1 FROM data_observations WHERE value_json=? AND accepted=0', ('-1000000',)).fetchone()
     assert any('Legacy invalid price' in item['reason'] for item in report['Manual-review items'])
+
+
+def test_exported_shards_apply_and_reject_tampering(db, tmp_path):
+    report = run(db, [record()])
+    output = tmp_path / 'data'
+    write_outputs(db, report, output, NOW)
+    expected = encode(snapshot(db))
+    apply_snapshot(db, output / 'catalog.json')
+    assert encode(snapshot(db)) == expected
+    manifest = json.loads((output / 'catalog.json').read_text())
+    assert manifest['version'] == 2
+    shard = output / manifest['tables']['models'][0]['path']
+    shard.write_text('[]')
+    # Force a different manifest digest so startup checks the supplied artifact.
+    (output / 'catalog.json').write_text(json.dumps(manifest, indent=1))
+    with pytest.raises(ValueError, match='checksum'):
+        apply_snapshot(db, output / 'catalog.json')
+    assert encode(snapshot(db)) == expected

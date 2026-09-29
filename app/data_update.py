@@ -338,7 +338,7 @@ def monitor_harnesses(db, records, failures, manifests, report, now):
 def write_outputs(db, report, output_dir, now):
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    body = snapshot_text(db)
+    body = snapshot_text(db, output)
     digest = hashlib.sha256(body.encode()).hexdigest()
     catalog = output / 'catalog.json'
     changed = not catalog.exists() or catalog.read_text() != body

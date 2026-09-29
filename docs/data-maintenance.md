@@ -77,3 +77,11 @@ No Hermes configuration or secrets are copied into the repository or reports.
 Review completion is an explicit maintenance operation: preserve its evidence,
 record the accepted source observation, and mark the queue item resolved before
 regenerating a snapshot. No UI feature or automatic LLM approval path is added.
+
+
+Snapshots use a small catalog manifest and checksummed 1,000-row JSON shards.
+This bounds individual Git file size as observations grow and keeps changes
+reviewable at row level. Deployment verifies every shard before its transaction.
+Legacy invalid prices/limits are quarantined with original row evidence before
+validation; this corrects the previous importer's negative dynamic-price sentinels
+and zero limits without losing the evidence.

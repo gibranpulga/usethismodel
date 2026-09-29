@@ -18,17 +18,35 @@ def encode(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
 
 
-def snapshot_text(db):
-    data = snapshot(db)
-    parts = ['{"version":1,"tables":{']
-    for index, (table, rows) in enumerate(data['tables'].items()):
-        if index:
-            parts[-1] += ','
-        parts.append(encode(table) + ':[')
-        parts.extend(encode(row) + (',' if i < len(rows) - 1 else '') for i, row in enumerate(rows))
-        parts.append(']')
-    parts.append('}}')
-    return '\n'.join(parts) + '\n'
+def snapshot_text(db, output_dir=None):
+    if output_dir is None:
+        return encode(snapshot(db)) + '\n'
+    # Bound individual Git files as observation history grows. Shards are stable
+    # by row order; a new observation usually changes only the final shard.
+    root = Path(output_dir)
+    manifest = {'version': 2, 'tables': {}}
+    expected = set()
+    for table in tables(db):
+        cursor = db.execute(f'SELECT * FROM "{table}" ORDER BY rowid')
+        chunks = []
+        index = 0
+        while rows := cursor.fetchmany(1000):
+            content = '[\n' + ',\n'.join(encode(dict(row)) for row in rows) + '\n]\n'
+            relative = f'snapshot/{table}/{index:06d}.json'
+            path = root / relative
+            expected.add(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists() or path.read_text() != content:
+                temporary = path.with_suffix('.tmp')
+                temporary.write_text(content)
+                temporary.replace(path)
+            chunks.append({'path': relative, 'sha256': hashlib.sha256(content.encode()).hexdigest()})
+            index += 1
+        manifest['tables'][table] = chunks
+    for path in (root / 'snapshot').glob('*/*.json'):
+        if path not in expected:
+            path.unlink()
+    return json.dumps(manifest, indent=2, sort_keys=True) + '\n'
 
 
 def apply_snapshot(db, path):
@@ -40,6 +58,19 @@ def apply_snapshot(db, path):
     if db.execute('SELECT 1 FROM applied_snapshots WHERE digest=?', (digest,)).fetchone():
         return
     data = json.loads(raw)
+    if data.get('version') == 2:
+        loaded = {}
+        for table, chunks in data['tables'].items():
+            loaded[table] = []
+            for chunk in chunks:
+                shard = (path.parent / chunk['path']).resolve()
+                if not shard.is_relative_to(path.parent.resolve()):
+                    raise ValueError('Snapshot shard escapes catalog directory')
+                content = shard.read_bytes()
+                if hashlib.sha256(content).hexdigest() != chunk['sha256']:
+                    raise ValueError('Snapshot shard checksum mismatch')
+                loaded[table].extend(json.loads(content))
+        data = {'version': 1, 'tables': loaded}
     if data.get('version') != 1 or set(data['tables']) != set(tables(db)):
         raise ValueError('Catalog snapshot schema mismatch')
     db.execute('BEGIN')

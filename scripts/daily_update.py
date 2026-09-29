@@ -101,12 +101,13 @@ class Runner:
         for path in (self.database, self.pending):
             path.unlink(missing_ok=True)
 
-    def publish(self, commit):
+    def publish(self, commit, validated=False):
         if self.dry_run:
             raise RuntimeError("Dry run cannot publish a pending commit; run the normal job to retry")
         if self.git("rev-parse", "origin/main") != commit:
             self.git("merge-base", "--is-ancestor", "origin/main", commit)
-            self.checks()
+            if not validated:
+                self.checks()
             if self.git("status", "--porcelain", cwd=self.work):
                 raise RuntimeError("Validation modified the pending worktree")
             self.phase = "GitHub push"
@@ -179,7 +180,7 @@ class Runner:
             checkpoint = self.pending.with_suffix(".tmp")
             checkpoint.write_text(json.dumps({"commit": commit}) + "\n")
             checkpoint.replace(self.pending)
-            self.publish(commit)
+            self.publish(commit, validated=True)
         finally:
             if not self.pending.exists():
                 self.cleanup()
