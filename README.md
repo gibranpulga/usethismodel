@@ -33,6 +33,15 @@ Open <http://127.0.0.1:8000>. SQLite initializes automatically at
 
 For production-like local serving, run `gunicorn --bind 127.0.0.1:8000 wsgi:app`.
 
+## Verification
+
+```sh
+pip install -r requirements-dev.txt
+ruff check .
+pytest
+docker build -t usethismodel:local .
+```
+
 ## Configuration
 
 See [.env.example](.env.example). `FLASK_SECRET_KEY` should be a long random
@@ -46,6 +55,7 @@ container image stores the database at `/data/usethismodel.sqlite3`.
 app/                 Flask app factory, SQLite access, templates and static UI
 docs/                Product landscape and source research
 migrations/          Ordered SQLite schema migrations
+tests/               Application, route and SQLite initialization tests
 Dockerfile           Production container definition
 wsgi.py              WSGI entry point
 requirements.txt     Runtime dependencies
@@ -63,3 +73,11 @@ requirements.txt     Runtime dependencies
 
 See [the landscape research](docs/landscape-research.md) for the initial
 competitor, data source and benchmark review.
+
+## Coolify deployment
+
+The repository is ready for Coolify's Dockerfile build pack. Configure a
+service from the `main` branch, expose port `8000`, assign persistent storage
+at `/data`, and set `FLASK_SECRET_KEY` as a production secret. Attach
+`usethismodel.codefiction.net` to that service. The database must stay on the
+`/data` volume so SQLite persists across container replacements.

@@ -20,20 +20,57 @@ def create_app(test_config=None):
     @app.get("/health")
     def health():
         from .db import get_db
+
         get_db().execute("SELECT 1").fetchone()
         return jsonify(status="ok", database="sqlite")
 
     @app.get("/")
     def home():
-        sections = ["Models", "Providers", "Harnesses", "Compatibility", "Offers", "New Releases", "Benchmarks", "Use Cases", "Compare", "Calculator"]
+        sections = [
+            "Models",
+            "Providers",
+            "Harnesses",
+            "Compatibility",
+            "Offers",
+            "New Releases",
+            "Benchmarks",
+            "Use Cases",
+            "Compare",
+            "Calculator",
+        ]
         return render_template("index.html", sections=sections)
 
     @app.get("/<section>")
     def placeholder(section):
-        labels = {"models": "Models", "providers": "Providers", "harnesses": "Harnesses", "compatibility": "Compatibility", "offers": "Offers", "new-releases": "New Releases", "benchmarks": "Benchmarks", "use-cases": "Use Cases", "compare": "Compare", "calculator": "Calculator"}
+        labels = {
+            "models": "Models",
+            "providers": "Providers",
+            "harnesses": "Harnesses",
+            "compatibility": "Compatibility",
+            "offers": "Offers",
+            "new-releases": "New Releases",
+            "benchmarks": "Benchmarks",
+            "use-cases": "Use Cases",
+            "compare": "Compare",
+            "calculator": "Calculator",
+        }
         label = labels.get(section)
         if not label:
-            return render_template("index.html", sections=["Models", "Providers", "Harnesses", "Compatibility", "Offers", "New Releases", "Benchmarks", "Use Cases", "Compare", "Calculator"]), 404
+            return render_template(
+                "index.html",
+                sections=[
+                    "Models",
+                    "Providers",
+                    "Harnesses",
+                    "Compatibility",
+                    "Offers",
+                    "New Releases",
+                    "Benchmarks",
+                    "Use Cases",
+                    "Compare",
+                    "Calculator",
+                ],
+            ), 404
         return render_template("placeholder.html", label=label)
 
     return app
