@@ -31,7 +31,7 @@ def test_database_initializes_all_migrations(app):
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
 
-    assert migrations == [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,), (11,), (12,), (13,)]
+    assert migrations == [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,), (11,), (12,), (13,), (14,)]
     assert {
         "models",
         "providers",
@@ -63,6 +63,7 @@ def test_database_initializes_all_migrations(app):
         "route_compatibility_evidence",
         "plan_harness_compatibility",
         "model_access_routes",
+        "analytics_daily",
     } <= tables
 
 
@@ -409,12 +410,55 @@ def test_public_api_resources_and_slug_detail(client):
 def test_seo_discovery_and_filter_index_policy(client):
     assert client.get("/robots.txt").status_code == 200
     assert b"Sitemap:" in client.get("/robots.txt").data
-    assert b"<urlset" in client.get("/sitemap.xml").data
+    assert b"<sitemapindex" in client.get("/sitemap.xml").data
+    assert b"<urlset" in client.get("/sitemaps/models.xml").data
     assert client.get("/feeds/releases.atom").mimetype == "application/atom+xml"
     assert client.get("/feeds/price-changes.atom").mimetype == "application/atom+xml"
+    assert client.get("/feeds/deals.atom").mimetype == "application/atom+xml"
+    assert client.get("/feeds/changes.json").json["version"].endswith("1.1")
     filtered = client.get("/models?tools=1")
     assert b'name="robots" content="noindex,follow"' in filtered.data
     assert b'rel="canonical"' in filtered.data
+
+
+@pytest.mark.parametrize("path,needle", [
+    ("/models/glm-5-3", b"GLM-5.3"),
+    ("/providers/openrouter", b"OpenRouter"),
+    ("/providers/z-ai", b"Z.ai"),
+    ("/harnesses/opencode", b"OpenCode"),
+    ("/harnesses/hermes", b"Hermes Agent"),
+    ("/harnesses/pi", b"Pi providers"),
+    ("/harnesses/codex", b"Codex CLI"),
+    ("/use-cases/free-tool-calling", b"Current provider routes"),
+    ("/use-cases/agentic-coding", b"Relevant benchmark observations"),
+    ("/use-cases/long-context", b"Last verified"),
+    ("/use-cases/3d-generation", b"3D"),
+    ("/deals", b"Offers &amp; deals"),
+    ("/releases", b"New releases"),
+])
+def test_public_discovery_pages_are_stable_and_factual(client, path, needle):
+    response = client.get(path, headers={"User-Agent": "pytest crawler"})
+    assert response.status_code == 200
+    assert needle in response.data
+    assert b'application/ld+json' in response.data or path.startswith(("/providers/", "/harnesses/"))
+
+
+def test_crawler_policy_separates_search_from_training_and_internal_pages(client):
+    robots = client.get("/robots.txt").data
+    assert b"User-agent: OAI-SearchBot\nAllow: /" in robots
+    assert b"User-agent: GPTBot\nDisallow: /" in robots
+    assert b"Disallow: /internal/" in robots
+    assert client.get("/internal/data-quality").status_code == 404
+
+
+def test_analytics_are_aggregate_and_do_not_store_search_text(client, app):
+    client.get("/models?q=a-sensitive-query", headers={"User-Agent": "Mozilla/5.0"})
+    client.post("/analytics/event", json={"event": "deal_click", "provider": "OpenRouter"})
+    with app.app_context():
+        records = get_db().execute("SELECT event,dimension,count FROM analytics_daily ORDER BY event").fetchall()
+    assert [(row["event"], row["dimension"]) for row in records] == [
+        ("deal_click", "openrouter"), ("search", "models")]
+    assert "sensitive" not in str([tuple(row) for row in records])
 
 
 def test_search_keeps_model_punctuation_and_keyword_boundaries(client):

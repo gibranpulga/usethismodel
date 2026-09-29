@@ -3,7 +3,9 @@ import hashlib
 import json
 from pathlib import Path
 
-EXCLUDED = {'schema_migrations', 'applied_snapshots'}
+# Operational state is intentionally outside the published catalog snapshot.
+# Snapshot application must never erase local usage counters.
+EXCLUDED = {'schema_migrations', 'applied_snapshots', 'analytics_daily'}
 
 
 def tables(db):

@@ -1,4 +1,4 @@
-.PHONY: data-update data-dry-run data-validate test
+.PHONY: data-update data-dry-run data-validate test launch-audit monitor
 PYTHON ?= .venv/bin/python
 DATABASE ?= instance/usethismodel.sqlite3
 
@@ -14,3 +14,9 @@ data-validate:
 test:
 	$(PYTHON) -m pytest -q
 	$(PYTHON) -m ruff check .
+
+launch-audit:
+	$(PYTHON) scripts/launch_audit.py
+
+monitor:
+	$(PYTHON) scripts/monitor_public.py

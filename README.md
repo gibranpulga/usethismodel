@@ -101,6 +101,7 @@ pip install -r requirements-dev.txt
 ruff check .
 pytest
 docker build -t usethismodel:local .
+make launch-audit
 ```
 
 ## Configuration
@@ -120,10 +121,19 @@ instead of inferring missing facts. Combined filters include `tools=true`,
 `max_output_price=1`, `harness=hermes-agent`, `mcp=true`, `offers=current`,
 `releases=7-days`, and `type=3d`.
 
-Crawler discovery is exposed through `/sitemap.xml`, `/robots.txt`,
-`/feeds/releases.atom`, and `/feeds/price-changes.atom`. Arbitrary search and
-filter combinations are canonicalized to their base page and marked
-`noindex,follow`; stable entity pages remain indexable.
+Crawler discovery is exposed through a grouped `/sitemap.xml`, `/robots.txt`,
+Atom feeds for releases, price changes, current deals and expired deals, and a
+combined JSON Feed at `/feeds/changes.json`. Arbitrary search and filter
+combinations are canonicalized to their base page and marked `noindex,follow`;
+stable entity pages remain indexable. Search crawlers are separated from model
+training crawlers; see [the verified crawler policy](docs/crawler-policy.md).
+
+Anonymous analytics use daily aggregate counters only. They cover searches
+without query text, popular model and harness pages, filter-key combinations,
+comparisons, deal clicks, API resources, and MCP request methods. No prompt,
+search text, IP address, cookie, or visitor identifier is stored. The dashboard
+under `/internal/analytics` requires `INTERNAL_DASHBOARD_TOKEN` and is not
+publicly indexable.
 
 ## Project structure
 

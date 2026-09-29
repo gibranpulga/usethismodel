@@ -336,28 +336,100 @@ def api_search():
 @public.get("/robots.txt")
 def robots():
     root = request.url_root.rstrip("/")
-    return Response(f"User-agent: *\nAllow: /\nDisallow: /models?\nDisallow: /compare?\nDisallow: /calculator?\nSitemap: {root}/sitemap.xml\n", mimetype="text/plain")
+    policy = f"""# Public factual pages are available to search and answer engines.
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Applebot-Extended
+Disallow: /
+
+User-agent: *
+Allow: /
+Disallow: /internal/
+Disallow: /analytics/
+Disallow: /*?
+
+Sitemap: {root}/sitemap.xml
+"""
+    return Response(policy, mimetype="text/plain")
 
 
 @public.get("/sitemap.xml")
 def sitemap():
     root = request.url_root.rstrip("/")
-    urls = ["/", "/models", "/providers", "/harnesses", "/workflows", "/benchmarks", "/use-cases", "/offers", "/rankings", "/api", "/mcp-info"]
-    urls += ["/models/" + row[0] for row in get_db().execute("SELECT canonical_slug FROM models WHERE canonical_slug IS NOT NULL")]
-    urls += ["/providers/" + slugify(row[0]) for row in get_db().execute("SELECT name FROM providers")]
-    urls += ["/harnesses/" + slugify(row[0]) for row in get_db().execute("SELECT name FROM harnesses")]
-    urls += ["/workflows/" + row[0] for row in get_db().execute("SELECT slug FROM workflows")]
-    urls += ["/benchmarks/" + slugify(f"{row[0]}-{row[1]}") for row in get_db().execute("SELECT name,version FROM benchmarks")]
-    urls += ["/use-cases/" + row[0] for row in get_db().execute("SELECT slug FROM use_cases")]
-    body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">" + "".join(
-        f"<url><loc>{root}{path}</loc></url>" for path in urls) + "</urlset>"
+    groups = ["core", "models", "providers", "harnesses", "use-cases", "workflows"]
+    body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">" + "".join(
+        f"<sitemap><loc>{root}/sitemaps/{group}.xml</loc></sitemap>" for group in groups) + "</sitemapindex>"
     return Response(body, mimetype="application/xml")
+
+
+def _urlset(paths):
+    root = request.url_root.rstrip("/")
+    body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">" + "".join(
+        f"<url><loc>{escape(root + path)}</loc></url>" for path in dict.fromkeys(paths)) + "</urlset>"
+    return Response(body, mimetype="application/xml")
+
+
+@public.get("/sitemaps/<group>.xml")
+def sitemap_group(group):
+    db = get_db()
+    groups = {
+        "core": lambda: ["/", "/models", "/providers", "/harnesses", "/workflows", "/benchmarks",
+                         "/use-cases", "/deals", "/releases", "/rankings", "/plans", "/api", "/mcp-info"] +
+                        ["/benchmarks/" + slugify(f"{row[0]}-{row[1]}") for row in db.execute("SELECT name,version FROM benchmarks")],
+        "models": lambda: ["/models/glm-5-3", "/models/deepseek-v4-pro"] +
+                          ["/models/" + row[0] for row in db.execute("""SELECT canonical_slug FROM models
+                            WHERE canonical_slug IS NOT NULL AND status!='DEPRECATED'
+                            AND canonical_slug NOT IN ('zhipuai/glm-5.3','deepseek/deepseek-v4-pro')""")],
+        "providers": lambda: ["/providers/" + slugify(row[0]) for row in db.execute("SELECT name FROM providers WHERE canonical_provider_id IS NULL")],
+        "harnesses": lambda: ["/harnesses/codex", "/harnesses/hermes"] + ["/harnesses/" + slugify(row[0]) for row in db.execute("SELECT name FROM harnesses WHERE name NOT IN ('Codex CLI','Hermes Agent')")],
+        "use-cases": lambda: ["/use-cases/free-tool-calling", "/use-cases/3d-generation"] + ["/use-cases/" + row[0] for row in db.execute("SELECT slug FROM use_cases WHERE slug!='3d'")],
+        "workflows": lambda: ["/workflows/" + row[0] for row in db.execute("SELECT slug FROM workflows")],
+    }
+    if group not in groups:
+        abort(404)
+    return _urlset(groups[group]())
 
 
 def _feed(title, path, entries):
     root = request.url_root.rstrip("/")
     updated = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    items = "".join(f"<entry><id>{escape(root + url)}</id><title>{escape(str(name))}</title><link href=\"{escape(root + url)}\"/><updated>{escape(str(when))}T00:00:00Z</updated><summary>{escape(str(summary))}</summary></entry>" for name, url, when, summary in entries)
+    def atom_time(value):
+        value = str(value or datetime.now(timezone.utc).isoformat())
+        if "T" not in value:
+            value += "T00:00:00Z"
+        return value.replace("+00:00", "Z")
+    items = "".join(f"<entry><id>{escape(root + url)}</id><title>{escape(str(name))}</title><link href=\"{escape(root + url)}\"/><updated>{escape(atom_time(when))}</updated><summary>{escape(str(summary))}</summary></entry>" for name, url, when, summary in entries)
     body = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed xmlns=\"http://www.w3.org/2005/Atom\"><id>{root}{path}</id><title>{title}</title><updated>{updated}</updated><link href=\"{root}{path}\" rel=\"self\"/>{items}</feed>"
     return Response(body, mimetype="application/atom+xml")
 
@@ -380,3 +452,39 @@ def price_feed():
     entries = [(f"{r['canonical_name']} via {r['provider']}: {r['price_type']}", "/models/" + r["canonical_slug"],
                 r["valid_from"][:10], f"Recorded price: USD {r['amount']} {r['unit']}.") for r in rows]
     return _feed("UseThisModel price changes", "/feeds/price-changes.atom", entries)
+
+
+def _offer_entries(status):
+    records = offer_rows(get_db(), include_expired=True)
+    selected = [row for row in records if row["status"] == status][:50]
+    return [(row["title"], "/deals", row["last_verified_at"] or row["ends_at"] or row["starts_at"],
+             f"{row['provider_name']} · {row['offer_type']} · {row['status']}; expires {row['ends_at'] or 'not published'}.")
+            for row in selected]
+
+
+@public.get("/feeds/deals.atom")
+def deal_feed():
+    return _feed("UseThisModel new and current deals", "/feeds/deals.atom", _offer_entries("ACTIVE"))
+
+
+@public.get("/feeds/expired-deals.atom")
+def expired_deal_feed():
+    return _feed("UseThisModel expired deals", "/feeds/expired-deals.atom", _offer_entries("EXPIRED"))
+
+
+@public.get("/feeds/changes.json")
+def changes_json_feed():
+    root = request.url_root.rstrip("/")
+    def json_time(value):
+        value = str(value or datetime.now(timezone.utc).isoformat())
+        return (value + "T00:00:00Z") if "T" not in value else value.replace("+00:00", "Z")
+    releases = [dict(row) for row in get_db().execute(
+        "SELECT canonical_name,canonical_slug,released_at,modality FROM models WHERE released_at IS NOT NULL ORDER BY released_at DESC LIMIT 20")]
+    items = [{"id": root + "/models/" + row["canonical_slug"], "url": root + "/models/" + row["canonical_slug"],
+              "title": row["canonical_name"], "date_published": json_time(row["released_at"]),
+              "content_text": f"New {row['modality']} model release."} for row in releases]
+    for row in _offer_entries("ACTIVE")[:20]:
+        items.append({"id": root + row[1] + "#" + slugify(row[0]), "url": root + row[1],
+                      "title": row[0], "date_modified": json_time(row[2]), "content_text": row[3]})
+    return jsonify({"version": "https://jsonfeed.org/version/1.1", "title": "UseThisModel catalog changes",
+                    "home_page_url": root, "feed_url": root + "/feeds/changes.json", "items": items})

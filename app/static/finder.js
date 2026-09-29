@@ -10,6 +10,11 @@ function refreshPinButtons() { const saved = readPersonal(); document.querySelec
 function refreshEntityPins() { const saved = readPersonal(); document.querySelectorAll('[data-pin-entity]').forEach((button) => { const active = saved.entities.some((item) => item.key === button.dataset.key); button.classList.toggle('active', active); button.textContent = active ? '★' : '☆'; button.setAttribute('aria-pressed', String(active)); }); }
 
 document.addEventListener('click', (event) => {
+  const dealLink = event.target.closest('.offer-card a[href^="http"]');
+  if (dealLink && navigator.sendBeacon) {
+    const provider = dealLink.closest('.offer-card')?.querySelector('.route-via')?.textContent.split(/[\/·]/)[0].trim() || 'unknown';
+    navigator.sendBeacon('/analytics/event', new Blob([JSON.stringify({event: 'deal_click', provider})], {type: 'application/json'}));
+  }
   const compare = event.target.closest('[data-compare]');
   if (compare) {
     const ids = [...document.querySelectorAll('.compare-check input:checked')].map((input) => input.value);

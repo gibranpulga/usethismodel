@@ -558,6 +558,25 @@ class RateLimitMiddleware:
         await self.app(scope, receive, send)
 
 
+class AggregateUsageMiddleware:
+    """Count MCP HTTP requests without reading or retaining request bodies."""
+
+    def __init__(self, app, flask_app):
+        self.app = app
+        self.flask_app = flask_app
+
+    async def __call__(self, scope, receive, send):
+        await self.app(scope, receive, send)
+        if scope["type"] == "http" and scope.get("path", "").startswith("/mcp"):
+            try:
+                from .analytics import record
+                from .db import get_db as writable_db
+                with self.flask_app.app_context():
+                    record(writable_db(), "mcp_request", scope.get("method", "UNKNOWN"))
+            except Exception:
+                self.flask_app.logger.exception("MCP aggregate analytics write failed")
+
+
 def create_http_app(flask_app):
     bind_app(flask_app)
     mcp_app = server.streamable_http_app(streamable_http_path="/mcp", json_response=True,
@@ -572,7 +591,7 @@ def create_http_app(flask_app):
     combined = Starlette(routes=[*mcp_app.routes, Mount("/", app=WSGIMiddleware(flask_app))],
                          lifespan=lifespan)
     rate = int(os.getenv("MCP_RATE_LIMIT_PER_MINUTE", "60"))
-    return RateLimitMiddleware(combined, rate)
+    return AggregateUsageMiddleware(RateLimitMiddleware(combined, rate), flask_app)
 
 
 def main():
