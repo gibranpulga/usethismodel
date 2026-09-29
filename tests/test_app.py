@@ -31,7 +31,7 @@ def test_database_initializes_all_migrations(app):
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
 
-    assert migrations == [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,), (11,), (12,)]
+    assert migrations == [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,), (11,), (12,), (13,)]
     assert {
         "models",
         "providers",
@@ -61,6 +61,8 @@ def test_database_initializes_all_migrations(app):
         "workflow_integrations",
         "workflow_harness_compatibility",
         "route_compatibility_evidence",
+        "plan_harness_compatibility",
+        "model_access_routes",
     } <= tables
 
 
@@ -71,11 +73,42 @@ def test_health_checks_sqlite(client):
     assert response.json == {"status": "ok", "database": "sqlite"}
 
 
+def test_plan_catalog_preserves_vague_limits_and_access_routes(client):
+    response = client.get("/plans?harness=OpenCode&coding=1")
+
+    assert response.status_code == 200
+    assert b"GLM Coding Plan" in response.data
+    assert b"Exact token equivalent" in response.data
+    assert b"documented third party" in response.data
+    assert b"Z.ai PAYG API" in response.data
+    assert b"OpenRouter" in response.data
+
+    api = client.get("/api/v1/plans?subscription=true&coding=true")
+    assert api.status_code == 200
+    assert api.json["meta"]["count"] >= 10
+    assert all("quota_description" in plan for plan in api.json["data"])
+
+
+def test_calculator_compares_without_inventing_break_even(client, app):
+    with app.app_context():
+        plan_id = get_db().execute(
+            "SELECT id FROM plans WHERE name='GLM Coding Plan Lite'"
+        ).fetchone()[0]
+
+    response = client.get(f"/calculator?plan_id={plan_id}&input_tokens=1000000&output_tokens=250000")
+
+    assert response.status_code == 200
+    assert b"Exact PAYG estimates" in response.data
+    assert b"Exact token equivalent: <b>unknown</b>" in response.data
+    assert b"No break-even is claimed" in response.data
+
+
 @pytest.mark.parametrize(
     "path",
     [
         "/",
         "/models",
+        "/plans",
         "/providers",
         "/harnesses",
         "/workflows",

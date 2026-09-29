@@ -1,0 +1,32 @@
+{% extends "placeholder.html" %}{% block content %}
+<section class="page-intro"><div class="eyebrow">SUBSCRIPTIONS · API ROUTES · REAL LIMITS</div><h1>Developer plans</h1><p>Compare fixed-price coding access with pay-as-you-go routes. Provider wording is preserved: “5× usage” is never converted into invented tokens.</p></section>
+<form class="plan-filters" method="get">
+  <div class="toggle-row">
+    <label><input type="checkbox" name="coding" value="1" {% if filters.coding == '1' %}checked{% endif %}> Coding</label>
+    <label><input type="checkbox" name="api" value="1" {% if filters.api == '1' %}checked{% endif %}> API/key endpoint</label>
+    <label><input type="checkbox" name="subscription" value="1" {% if filters.subscription == '1' %}checked{% endif %}> Subscription</label>
+    <label><input type="checkbox" name="free" value="1" {% if filters.free == '1' %}checked{% endif %}> Free</label>
+  </div>
+  <div class="plan-filter-grid">
+    <label>Provider<select name="provider"><option value="">All</option>{% for p in plan_providers %}<option {% if filters.provider == p.name %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
+    <label>Harness<select name="harness"><option value="">All</option>{% for h in plan_harnesses %}<option {% if filters.harness == h.name %}selected{% endif %}>{{ h.name }}</option>{% endfor %}</select></label>
+    <label>Maximum monthly price<input name="max_price" type="number" min="0" step="1" value="{{ filters.max_price or '' }}" placeholder="Any"></label>
+    <button class="button">Filter plans</button><a href="/plans">Clear</a>
+  </div>
+</form>
+<div class="plan-grid">
+{% for plan in plans %}<article class="plan-card">
+  <div class="plan-card-head"><div><span class="eyebrow">{{ plan.provider_name }}</span><h2>{{ plan.name }}</h2></div><span class="plan-type">{{ plan.plan_type|lower }}</span></div>
+  <div class="plan-price">{% if plan.monthly_price is not none %}{{ '$' if plan.currency == 'USD' else plan.currency ~ ' ' }}{{ '%.2f'|format(plan.monthly_price) }}<small>/month</small>{% else %}Custom / usage based{% endif %}</div>
+  {% if plan.annual_price is not none %}<p class="route-meta">{{ '$' if plan.currency == 'USD' else plan.currency ~ ' ' }}{{ '%.2f'|format(plan.annual_price) }} billed annually{% if plan.price_note %} · {{ plan.price_note }}{% endif %}</p>{% elif plan.price_note %}<p class="route-meta">{{ plan.price_note }}</p>{% endif %}
+  <dl class="plan-facts"><dt>Models</dt><dd>{{ plan.models_included or 'Not published' }}</dd><dt>API access</dt><dd>{{ plan.api_access|lower }} — subscription access is separate from general PAYG API unless noted</dd><dt>Published allowance</dt><dd>{{ plan.quota_description or 'Not published' }}</dd><dt>Reset</dt><dd>{{ plan.reset_interval or 'Unknown' }}</dd><dt>Explicit limit</dt><dd>{{ plan.published_limit or 'Not published' }}</dd><dt>Exact token equivalent</dt><dd>Unknown{% if plan.published_limit and ('token' in plan.published_limit|lower) %} unless the provider’s stated model-specific assumptions apply{% endif %}</dd></dl>
+  {% if plan.fair_use %}<p class="plan-note"><b>Fair use:</b> {{ plan.fair_use }}</p>{% endif %}{% if plan.region_restrictions %}<p class="plan-note"><b>Regions:</b> {{ plan.region_restrictions }}</p>{% endif %}
+  <div class="compat-list">{% for item in plan.compatibility %}<span title="{{ item.note or '' }}">{{ item.harness_name }} · {{ item.support_level|replace('_',' ')|lower }}</span>{% endfor %}</div>
+  <footer><a href="{{ plan.source_url }}" rel="noreferrer">Official source</a><span>Verified {{ plan.verified_at or 'unknown' }}</span></footer>
+</article>{% else %}<p class="empty">No current plans match these filters.</p>{% endfor %}
+</div>
+
+<section class="section-head"><div><div class="eyebrow">SAME MODEL, DIFFERENT BILL</div><h2>Access routes</h2></div></section>
+<p class="method-note">A subscription login, a dedicated coding-plan endpoint, a direct API key, and an aggregator are separate products. API access below means a callable endpoint; it does not imply general production use.</p>
+{% for family,routes in routes_by_family.items() %}<h3>{{ family }}</h3><div class="compare-wrap"><table class="data-table access-table"><thead><tr><th>Route</th><th>Type</th><th>Billing</th><th>What you actually use</th><th>Source</th></tr></thead><tbody>{% for route in routes %}<tr><td>{{ route.route_name }}</td><td>{{ route.route_type|replace('_',' ')|title }}</td><td>{{ route.billing_basis }}</td><td>{{ route.access_detail }}</td><td><a href="{{ route.source_url }}" rel="noreferrer">Official · {{ route.verified_at }}</a></td></tr>{% endfor %}</tbody></table></div>{% endfor %}
+{% endblock %}

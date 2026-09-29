@@ -479,6 +479,12 @@
         "sha256": "b696d52ac25543c508b3e449c1a444f3e408fa0d49516eb116a21687f06d32d8"
       }
     ],
+    "model_access_routes": [
+      {
+        "path": "snapshot/model_access_routes/000000.json",
+        "sha256": "250ef145f226325f5f004cd47264e8c0ffe42c9365e53f2a4fec39d32074b7f3"
+      }
+    ],
     "model_aliases": [
       {
         "path": "snapshot/model_aliases/000000.json",
@@ -713,7 +719,18 @@
         "sha256": "a0950da6d2281d1c10a62e9a7e87bed83bd8620701c7afb8d08ffa04278725c8"
       }
     ],
-    "plans": [],
+    "plan_harness_compatibility": [
+      {
+        "path": "snapshot/plan_harness_compatibility/000000.json",
+        "sha256": "8fe4c5e008967236c9fc28d6485296214936b10290fb4bb70fdae30c1945668b"
+      }
+    ],
+    "plans": [
+      {
+        "path": "snapshot/plans/000000.json",
+        "sha256": "b6d9ca5a1261678d67d62ede04aa5fd1a19c8fedfa5906d3d11aee53994a65a7"
+      }
+    ],
     "pricing_records": [
       {
         "path": "snapshot/pricing_records/000000.json",
@@ -1235,7 +1252,7 @@
     "sources": [
       {
         "path": "snapshot/sources/000000.json",
-        "sha256": "96734a40dfd4a780e15af3dbfa317802e7652734a2ebf274497b0df087b187b9"
+        "sha256": "7fa095410509a068dda2492444de78f2b08493bf2c2f724dc91c473932c32768"
       }
     ],
     "use_cases": [

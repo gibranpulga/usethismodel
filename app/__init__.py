@@ -8,11 +8,13 @@ from .db import init_db
 from .domain import compatibility_for
 from .public import public, slugify
 from .query import (
+    access_route_rows,
     filter_options,
     interpret_search,
     offer_rows,
     openrouter_free_rows,
     openrouter_variant_rows,
+    plan_rows,
     price_history,
     pricing_differences,
     ranking_groups,
@@ -20,7 +22,7 @@ from .query import (
     source_rows,
 )
 
-NAV = [("Home", "/"), ("Models", "/models"), ("Rankings", "/rankings"), ("Offers", "/offers"), ("Providers", "/providers"), ("Harnesses", "/harnesses"), ("Workflows", "/workflows"), ("Compatibility", "/compatibility"), ("My Setup", "/my-setup"), ("New Releases", "/new-releases"), ("Benchmarks", "/benchmarks"), ("Use Cases", "/use-cases"), ("Compare", "/compare"), ("Calculator", "/calculator")]
+NAV = [("Home", "/"), ("Models", "/models"), ("Plans", "/plans"), ("Rankings", "/rankings"), ("Offers", "/offers"), ("Providers", "/providers"), ("Harnesses", "/harnesses"), ("Workflows", "/workflows"), ("Compatibility", "/compatibility"), ("My Setup", "/my-setup"), ("New Releases", "/new-releases"), ("Benchmarks", "/benchmarks"), ("Use Cases", "/use-cases"), ("Compare", "/compare"), ("Calculator", "/calculator")]
 PRESETS = {
     "free-tools": ("Free + Tools", {"free": "1", "tools": "1"}), "cheap-agent": ("Cheapest Agent Models", {"tools": "1", "use_case": "agentic-coding"}),
     "strong-coding": ("Strong Coding", {"tools": "1", "use_case": "coding"}), "best-value-coding": ("Best Value Coding", {"tools": "1", "use_case": "coding", "sort": "value"}),
@@ -327,6 +329,24 @@ def create_app(test_config=None):
         histories = {r["offering_id"]: price_history(db(), r["offering_id"]) for r in selected}
         return render_template("compare.html", title="Compare routes", routes=selected, all_routes=all_routes, histories=histories)
 
+    @app.get("/plans")
+    def plans():
+        filters = finder_filters()
+        routes_by_family = {}
+        for route in access_route_rows(db()):
+            routes_by_family.setdefault(route["model_family"], []).append(route)
+        providers = rows("""SELECT DISTINCT p.name FROM plans pl JOIN providers p ON p.id=pl.provider_id
+          WHERE pl.status IN ('ACTIVE','LIMITED','WAITLIST') ORDER BY p.name""")
+        harnesses = rows("""SELECT DISTINCT h.name FROM plan_harness_compatibility ph
+          JOIN harnesses h ON h.id=ph.harness_id ORDER BY h.name""")
+        return render_template(
+            "plans.html", title="Developer plans & access routes", plans=plan_rows(db(), filters),
+            filters=filters, plan_providers=providers, plan_harnesses=harnesses,
+            routes_by_family=routes_by_family,
+            canonical_url=request.url_root.rstrip('/') + request.path,
+            meta_description="Compare current AI coding subscriptions, explicit allowances, API separation, harness compatibility, and model access routes from official sources.",
+        )
+
     @app.get("/calculator")
     def calculator():
         filters = finder_filters()
@@ -339,6 +359,11 @@ def create_app(test_config=None):
         output_tokens = bounded_int("output_tokens", 250_000)
         cache_share = min(100, bounded_int("cache_share", 0, 100)) / 100
         batch = request.args.get("batch") == "1"
+        selected_plan = None
+        if request.args.get("plan_id", "").isdigit():
+            selected_plan = db().execute("""SELECT pl.*,p.name provider_name,s.url source_url
+              FROM plans pl JOIN providers p ON p.id=pl.provider_id LEFT JOIN sources s ON s.id=pl.source_id
+              WHERE pl.id=?""", (int(request.args["plan_id"]),)).fetchone()
         calculated = []
         for route in compatible_routes(filters):
             if route["input_price"] is None or route["output_price"] is None:
@@ -346,7 +371,7 @@ def create_app(test_config=None):
             cache_price = route["cache_read_price"] if route["cache_read_price"] is not None else route["input_price"]
             total = (input_tokens * ((1-cache_share)*route["input_price"] + cache_share*cache_price) + output_tokens * route["output_price"]) / 1_000_000
             calculated.append({**route, "monthly_cost": total * (.5 if batch and route["batch"] else 1), "batch_applied": batch and route["batch"]})
-        return render_template("calculator.html", title="Cost calculator", filters=filters, options=filter_options(db()), routes=sorted(calculated, key=lambda r: r["monthly_cost"]), input_tokens=input_tokens, output_tokens=output_tokens, cache_share=round(cache_share*100), batch=batch)
+        return render_template("calculator.html", title="Cost calculator", filters=filters, options=filter_options(db()), routes=sorted(calculated, key=lambda r: r["monthly_cost"]), plans=plan_rows(db(), {"subscription": "1", "coding": "1"}), selected_plan=dict(selected_plan) if selected_plan else None, input_tokens=input_tokens, output_tokens=output_tokens, cache_share=round(cache_share*100), batch=batch)
 
     @app.get("/offers")
     def offers():

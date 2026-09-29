@@ -10,7 +10,7 @@ from flask import Blueprint, Response, abort, jsonify, request, url_for
 
 from .db import get_db
 from .domain import compatibility_for
-from .query import offer_rows, openrouter_free_rows, route_rows
+from .query import access_route_rows, offer_rows, openrouter_free_rows, plan_rows, route_rows
 
 public = Blueprint("public", __name__)
 API_VERSION = "v1"
@@ -168,7 +168,7 @@ def api_index():
         "name": "UseThisModel public read-only API",
         "documentation": url_for("public.api_docs", _external=True),
         "response": {"data": "resource or list", "meta": {"api_version": "v1", "count": "integer"}},
-        "endpoints": ["models", "models/{canonical-slug}", "providers", "harnesses", "workflows",
+        "endpoints": ["models", "models/{canonical-slug}", "providers", "plans", "access-routes", "harnesses", "workflows",
                       "offers", "free-routes", "releases", "benchmarks", "compatibility", "search"],
     })
 
@@ -223,6 +223,20 @@ def api_providers():
     for row in records:
         row["slug"] = slugify(row["name"])
     return _envelope(records)
+
+
+@public.get("/api/v1/plans")
+def api_plans():
+    filters = normalized_filters(request.args)
+    for key in ("coding", "api", "subscription"):
+        if key in filters:
+            filters[key] = "1" if _truth(filters[key]) else "0"
+    return _envelope(plan_rows(get_db(), filters), filters=filters)
+
+
+@public.get("/api/v1/access-routes")
+def api_access_routes():
+    return _envelope(access_route_rows(get_db()))
 
 
 @public.get("/api/v1/harnesses")

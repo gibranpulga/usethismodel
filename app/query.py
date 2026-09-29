@@ -305,6 +305,64 @@ def offer_rows(db, include_expired=False):
     """).fetchall()]
 
 
+def plan_rows(db, filters=None):
+    """Return current developer plans without interpreting vague allowances."""
+    filters = filters or {}
+    clauses, params = ["pl.status IN ('ACTIVE','LIMITED','WAITLIST')"], []
+    if filters.get("coding") == "1":
+        clauses.append("pl.is_coding=1")
+    if filters.get("api") == "1":
+        clauses.append("pl.api_access IN ('YES','LIMITED')")
+    if filters.get("subscription") == "1":
+        clauses.append("pl.plan_type='SUBSCRIPTION'")
+    if filters.get("free") == "1":
+        clauses.append("(pl.plan_type='FREE' OR pl.monthly_price=0)")
+    if filters.get("provider"):
+        clauses.append("lower(p.name)=lower(?)")
+        params.append(filters["provider"])
+    if filters.get("harness"):
+        clauses.append("EXISTS (SELECT 1 FROM plan_harness_compatibility ph JOIN harnesses h ON h.id=ph.harness_id WHERE ph.plan_id=pl.id AND lower(h.name)=lower(?) AND ph.support_level!='UNSUPPORTED')")
+        params.append(filters["harness"])
+    if filters.get("max_price") not in (None, ""):
+        try:
+            maximum = max(0, float(filters["max_price"]))
+        except (TypeError, ValueError):
+            maximum = None
+        if maximum is not None:
+            clauses.append("pl.monthly_price<=?")
+            params.append(maximum)
+    rows = db.execute(f"""
+      SELECT pl.*,p.name provider_name,s.name source_name,s.url source_url,
+        GROUP_CONCAT(DISTINCT h.name) compatible_harnesses
+      FROM plans pl JOIN providers p ON p.id=pl.provider_id
+      LEFT JOIN sources s ON s.id=pl.source_id
+      LEFT JOIN plan_harness_compatibility ph ON ph.plan_id=pl.id AND ph.support_level!='UNSUPPORTED'
+      LEFT JOIN harnesses h ON h.id=ph.harness_id
+      WHERE {' AND '.join(clauses)}
+      GROUP BY pl.id
+      ORDER BY pl.monthly_price IS NULL,pl.monthly_price,p.name,pl.name
+    """, params).fetchall()
+    result = [dict(row) for row in rows]
+    for plan in result:
+        plan["compatibility"] = [dict(item) for item in db.execute("""
+          SELECT h.name harness_name,ph.support_level,ph.note,s.url source_url
+          FROM plan_harness_compatibility ph JOIN harnesses h ON h.id=ph.harness_id
+          JOIN sources s ON s.id=ph.source_id WHERE ph.plan_id=? ORDER BY h.name
+        """, (plan["id"],)).fetchall()]
+    return result
+
+
+def access_route_rows(db):
+    return [dict(row) for row in db.execute("""
+      SELECT ar.*,p.name provider_name,pl.name plan_name,s.name source_name,s.url source_url
+      FROM model_access_routes ar
+      LEFT JOIN providers p ON p.id=ar.provider_id
+      LEFT JOIN plans pl ON pl.id=ar.plan_id
+      JOIN sources s ON s.id=ar.source_id
+      ORDER BY ar.model_family,CASE ar.route_type WHEN 'SUBSCRIPTION' THEN 0 WHEN 'DIRECT_API' THEN 1 ELSE 2 END,ar.route_name
+    """).fetchall()]
+
+
 def openrouter_free_rows(db, tools_only=False):
     condition = "AND rv.tool_support='YES'" if tools_only else ""
     return [dict(row) for row in db.execute(f"""
