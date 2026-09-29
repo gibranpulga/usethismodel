@@ -41,7 +41,7 @@
 {"fetched_at":"2026-09-29","id":40,"name":"GitHub MCP Server","reliability":"HIGH","source_type":"official repository","url":"https://github.com/github/github-mcp-server"},
 {"fetched_at":"2026-09-29","id":41,"name":"Playwright MCP","reliability":"HIGH","source_type":"official repository","url":"https://github.com/microsoft/playwright-mcp"},
 {"fetched_at":"2026-09-29","id":42,"name":"MCP transports specification","reliability":"HIGH","source_type":"official documentation","url":"https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"},
-{"fetched_at":"2026-09-29","id":43,"name":"Hermes installed version inspection","reliability":"HIGH","source_type":"local installation inspection","url":"https://github.com/NousResearch/hermes-agent/tree/6a6aacc1cb60fa5d7fd4ef1abcd5879116f25eca"},
+{"fetched_at":"2026-09-30","id":43,"name":"Hermes installed version inspection","reliability":"HIGH","source_type":"local installation inspection","url":"https://github.com/NousResearch/hermes-agent"},
 {"fetched_at":"2026-09-29","id":44,"name":"Codex CLI official docs","reliability":"HIGH","source_type":"official documentation","url":"https://developers.openai.com/codex/config-reference"},
 {"fetched_at":"2026-09-29","id":45,"name":"Claude Code official docs","reliability":"HIGH","source_type":"official documentation","url":"https://code.claude.com/docs/en/llm-gateway"},
 {"fetched_at":"2026-09-29","id":46,"name":"OpenCode official docs","reliability":"HIGH","source_type":"official documentation","url":"https://opencode.ai/docs/providers"},
