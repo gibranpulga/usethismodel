@@ -20,7 +20,7 @@ from .query import (
     source_rows,
 )
 
-NAV = [("Home", "/"), ("Models", "/models"), ("Rankings", "/rankings"), ("Offers", "/offers"), ("Providers", "/providers"), ("Harnesses", "/harnesses"), ("Compatibility", "/compatibility"), ("My Setup", "/my-setup"), ("New Releases", "/new-releases"), ("Benchmarks", "/benchmarks"), ("Use Cases", "/use-cases"), ("Compare", "/compare"), ("Calculator", "/calculator")]
+NAV = [("Home", "/"), ("Models", "/models"), ("Rankings", "/rankings"), ("Offers", "/offers"), ("Providers", "/providers"), ("Harnesses", "/harnesses"), ("Workflows", "/workflows"), ("Compatibility", "/compatibility"), ("My Setup", "/my-setup"), ("New Releases", "/new-releases"), ("Benchmarks", "/benchmarks"), ("Use Cases", "/use-cases"), ("Compare", "/compare"), ("Calculator", "/calculator")]
 PRESETS = {
     "free-tools": ("Free + Tools", {"free": "1", "tools": "1"}), "cheap-agent": ("Cheapest Agent Models", {"tools": "1", "use_case": "agentic-coding"}),
     "strong-coding": ("Strong Coding", {"tools": "1", "use_case": "coding"}), "best-value-coding": ("Best Value Coding", {"tools": "1", "use_case": "coding", "sort": "value"}),
@@ -97,7 +97,16 @@ def create_app(test_config=None):
             requested_limit = min(250, max(1, int(filters.get("limit", 100))))
         except (TypeError, ValueError):
             requested_limit = 100
-        query_filters = {**filters, "limit": 10_000} if harness_names else filters
+        workflow = None
+        if filters.get("workflow"):
+            workflow = db().execute(
+                "SELECT id,name,slug FROM workflows WHERE slug=? OR name=?",
+                (filters["workflow"], filters["workflow"]),
+            ).fetchone()
+            if not workflow:
+                return []
+        route_filters = {key: value for key, value in filters.items() if key != "workflow"}
+        query_filters = {**route_filters, "limit": 10_000} if harness_names else route_filters
         result = route_rows(db(), query_filters)
         if not harness_names:
             return result
@@ -106,7 +115,11 @@ def create_app(test_config=None):
             return []
         kept = []
         for route in result:
-            matches = [(harness["name"], compatibility_for(db(), harness["id"], route["offering_id"], filters.get("mcp") == "1")) for harness in harnesses]
+            matches = [(harness["name"], compatibility_for(
+                db(), harness["id"], route["offering_id"],
+                filters.get("mcp") == "1" or workflow is not None,
+                workflow["id"] if workflow else None,
+            )) for harness in harnesses]
             allowed = {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}
             if all(match["status"] in allowed for _, match in matches):
                 match = matches[0][1]
@@ -243,6 +256,10 @@ def create_app(test_config=None):
             abort(404)
         harness_id = harness["id"]
         capabilities = rows("SELECT transport,state,note FROM harness_mcp_capabilities WHERE harness_id=?", (harness_id,))
+        claims = rows("""SELECT hc.*,s.name source_name,s.url source_url FROM harness_claims hc
+          JOIN sources s ON s.id=hc.source_id WHERE hc.harness_id=? ORDER BY hc.claim_key""", (harness_id,))
+        access_methods = rows("""SELECT ha.*,s.name source_name,s.url source_url FROM harness_access_methods ha
+          JOIN sources s ON s.id=ha.source_id WHERE ha.harness_id=? ORDER BY ha.access_method""", (harness_id,))
         routes = []
         for route in route_rows(db()):
             match = compatibility_for(db(), harness_id, route["offering_id"])
@@ -252,7 +269,45 @@ def create_app(test_config=None):
           SELECT source_id FROM harnesses WHERE id=? UNION SELECT source_id FROM harness_mcp_capabilities WHERE harness_id=?
           UNION SELECT source_id FROM harness_provider_compatibility WHERE harness_id=?) ORDER BY s.name""", (harness_id, harness_id, harness_id))
         verified = max([s["fetched_at"] for s in sources if s["fetched_at"]], default=None)
-        return render_template("harness_detail.html", title=f"{harness['name']} providers, models & MCP compatibility", item=dict(harness), capabilities=capabilities, routes=routes, sources=sources, last_verified_at=verified, canonical_url=request.url_root.rstrip('/') + url_for('harness_detail_slug', harness_slug=harness_slug), meta_description=f"Documented {harness['name']} provider integrations, model-route compatibility, MCP capabilities, sources, and caveats.")
+        evidence_routes = [route for route in routes if route["compatibility"].get("source")]
+        return render_template("harness_detail.html", title=f"{harness['name']} providers, models & MCP compatibility", item=dict(harness), capabilities=capabilities, claims=claims, access_methods=access_methods, routes=evidence_routes or routes[:24], sources=sources, last_verified_at=verified, canonical_url=request.url_root.rstrip('/') + url_for('harness_detail_slug', harness_slug=harness_slug), meta_description=f"Documented {harness['name']} provider integrations, model-route compatibility, MCP capabilities, sources, and caveats.")
+
+    @app.get("/workflows")
+    def workflows():
+        return render_template("workflows.html", title="Workflow and tool integrations", workflows=rows("""SELECT w.*,
+          COUNT(wi.id) integration_count FROM workflows w LEFT JOIN workflow_integrations wi ON wi.workflow_id=w.id
+          GROUP BY w.id ORDER BY w.name"""))
+
+    @app.get("/workflows/<workflow_slug>")
+    def workflow_detail(workflow_slug):
+        workflow = db().execute("SELECT * FROM workflows WHERE slug=?", (workflow_slug,)).fetchone()
+        if not workflow:
+            abort(404)
+        integrations = rows("""SELECT wi.*,s.name source_name,s.url source_url FROM workflow_integrations wi
+          JOIN sources s ON s.id=wi.source_id WHERE wi.workflow_id=? ORDER BY wi.maintenance_status='ACTIVE' DESC,wi.name""", (workflow["id"],))
+        hosts = rows("""SELECT h.name harness_name,wi.name integration_name,whc.state,whc.reason,
+          s.url source_url,whc.verified_at FROM workflow_harness_compatibility whc
+          JOIN workflow_integrations wi ON wi.id=whc.integration_id JOIN harnesses h ON h.id=whc.harness_id
+          JOIN sources s ON s.id=whc.source_id WHERE wi.workflow_id=? ORDER BY h.name,wi.name""", (workflow["id"],))
+        route_matches = rows("""SELECT rce.*,h.name harness_name,o.id offering_id,o.api_model_id,
+          m.canonical_name,m.canonical_slug,p.name provider_name,o.context_limit,o.free_status,o.tool_support,
+          (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC LIMIT 1) input_price,
+          (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='OUTPUT' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC LIMIT 1) output_price,
+          s.url source_url FROM route_compatibility_evidence rce JOIN harnesses h ON h.id=rce.harness_id
+          JOIN provider_offerings o ON o.id=rce.offering_id JOIN models m ON m.id=o.model_id
+          JOIN providers p ON p.id=o.provider_id JOIN sources s ON s.id=rce.source_id
+          WHERE h.id IN (SELECT whc.harness_id FROM workflow_harness_compatibility whc
+            JOIN workflow_integrations wi ON wi.id=whc.integration_id WHERE wi.workflow_id=?)
+          ORDER BY o.free_status='FREE' DESC,COALESCE(input_price,999999),m.canonical_name""", (workflow["id"],))
+        benchmarks = rows("""SELECT b.name,b.version,b.category,br.score,br.metric,m.canonical_name,
+          s.url source_url FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id
+          JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
+          WHERE b.category IN ('coding','agentic coding','software engineering')
+          ORDER BY b.is_current DESC,br.score DESC LIMIT 20""")
+        return render_template("workflow_detail.html", title=f"{workflow['name']} compatibility", workflow=workflow,
+          integrations=integrations, hosts=hosts, route_matches=route_matches, benchmarks=benchmarks,
+          canonical_url=request.url_root.rstrip('/') + request.path,
+          meta_description=f"Source-backed {workflow['name']} MCP servers, compatible harness hosts, model routes, prices, and evidence.")
 
     @app.get("/compatibility")
     def compatibility():

@@ -252,6 +252,7 @@ def filter_options(db):
         "types": [r[0] for r in db.execute("SELECT DISTINCT modality FROM models ORDER BY modality")],
         "use_cases": [dict(r) for r in db.execute("SELECT slug,name FROM use_cases ORDER BY name")],
         "harnesses": [dict(r) for r in db.execute("SELECT id,name FROM harnesses ORDER BY name")],
+        "workflows": [dict(r) for r in db.execute("SELECT id,slug,name FROM workflows ORDER BY name")],
     }
 
 

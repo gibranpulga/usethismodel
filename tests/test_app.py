@@ -1,4 +1,6 @@
+import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -29,7 +31,7 @@ def test_database_initializes_all_migrations(app):
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
 
-    assert migrations == [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,), (11,)]
+    assert migrations == [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,), (11,), (12,)]
     assert {
         "models",
         "providers",
@@ -53,6 +55,12 @@ def test_database_initializes_all_migrations(app):
         "benchmark_results",
         "data_change_log",
         "model_media_features",
+        "harness_claims",
+        "harness_access_methods",
+        "workflows",
+        "workflow_integrations",
+        "workflow_harness_compatibility",
+        "route_compatibility_evidence",
     } <= tables
 
 
@@ -70,6 +78,9 @@ def test_health_checks_sqlite(client):
         "/models",
         "/providers",
         "/harnesses",
+        "/workflows",
+        "/workflows/unreal-engine",
+        "/workflows/reaper",
         "/compatibility",
         "/offers",
         "/new-releases",
@@ -143,6 +154,79 @@ def test_catalog_detail_pages(client):
         response = client.get(path)
         assert response.status_code == 301
         assert client.get(response.location).status_code == 200
+
+
+def test_route_specific_mcp_evidence_and_workflow_registry(app, client):
+    with app.app_context():
+        db = get_db()
+        harness = db.execute("SELECT id FROM harnesses WHERE name='OpenCode'").fetchone()[0]
+        workflow = db.execute("SELECT id FROM workflows WHERE slug='unreal-engine'").fetchone()[0]
+        offering = db.execute("SELECT id FROM provider_offerings WHERE api_model_id='z-ai/glm-5.3'").fetchone()[0]
+        result = compatibility_for(db, harness, offering, mcp_workflow=True, workflow_id=workflow)
+    assert result["status"] == "COMPATIBLE_WITH_CONFIGURATION"
+    assert result["checks"] == {
+        "harness_can_use_model": "YES",
+        "harness_supports_mcp": "YES",
+        "provider_route_tool_calls": "YES",
+        "tool_call_reliability": "UNVERIFIED",
+        "workflow_host": "CONFIGURATION",
+    }
+    response = client.get("/compatibility?workflow=unreal-engine&harness=OpenCode&tools=1&context=128000")
+    assert response.status_code == 200
+    assert b"Harness can use model" in response.data
+    assert b"Known tool reliability" in response.data
+    assert b"GLM-5.3" in response.data
+
+
+def test_harness_profiles_expose_sources_and_access_methods(client):
+    response = client.get("/harnesses/hermes-agent")
+    assert response.status_code == 200
+    assert b"0.20.0 installed; upstream 0.21.5" in response.data
+    assert b"Openrouter" in response.data
+    assert b"Streamable Http" in response.data
+    assert b"verified 2026-09-29" in response.data
+
+
+@pytest.mark.parametrize(
+    "harness,provider,api_model_id,expected_access",
+    [
+        ("OpenCode", "Z.ai", "glm-5.3", "custom OpenAI-compatible endpoint"),
+        ("OpenCode", "OpenRouter", "z-ai/glm-5.3", "OpenRouter API key"),
+        ("Pi", "OpenRouter", "z-ai/glm-5.3", "OpenRouter API key"),
+        ("Hermes Agent", "OpenRouter", "z-ai/glm-5.3", "OpenRouter API key"),
+    ],
+)
+def test_requested_route_cases_are_explicit(app, harness, provider, api_model_id, expected_access):
+    with app.app_context():
+        db = get_db()
+        harness_id = db.execute("SELECT id FROM harnesses WHERE name=?", (harness,)).fetchone()[0]
+        offering_id = db.execute("""SELECT o.id FROM provider_offerings o JOIN providers p ON p.id=o.provider_id
+          WHERE p.name=? AND o.api_model_id=?""", (provider, api_model_id)).fetchone()[0]
+        result = compatibility_for(db, harness_id, offering_id, mcp_workflow=harness != "Codex CLI")
+    assert result["checks"]["harness_can_use_model"] == "YES"
+    assert result["checks"]["provider_route_tool_calls"] == "YES"
+    assert result["access_method"] == expected_access
+
+
+def test_published_snapshot_contains_all_requested_route_cases():
+    root = Path(__file__).resolve().parent.parent / "data" / "snapshot"
+    evidence = [row for path in (root / "route_compatibility_evidence").glob("*.json")
+                for row in json.loads(path.read_text())]
+    access = {(row["access_method"], row["mcp_workflow_status"]) for row in evidence}
+    assert len(evidence) >= 8
+    assert ("DeepSeek API key", "COMPATIBLE") in access
+    assert ("OpenAI API key or ChatGPT/Codex subscription", "COMPATIBLE") in access
+
+
+@pytest.mark.parametrize("harness", ["OpenCode", "Codex CLI"])
+def test_unreal_mcp_requested_hosts_are_explicit(app, harness):
+    with app.app_context():
+        db = get_db()
+        count = db.execute("""SELECT COUNT(*) FROM workflow_harness_compatibility whc
+          JOIN workflow_integrations wi ON wi.id=whc.integration_id
+          JOIN workflows w ON w.id=wi.workflow_id JOIN harnesses h ON h.id=whc.harness_id
+          WHERE w.slug='unreal-engine' AND h.name=? AND whc.state='CONFIGURATION'""", (harness,)).fetchone()[0]
+    assert count >= 1
 
 
 @pytest.mark.parametrize(

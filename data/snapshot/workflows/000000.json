@@ -1,0 +1,9 @@
+[
+{"caution":"There is no single canonical Unreal MCP. Implementations differ in engine version, bridge architecture, operating-system requirements, tool surface, and maintenance.","description":"Use an MCP server plus an Unreal Editor bridge/plugin to inspect and modify Unreal projects.","id":1,"name":"Unreal Engine MCP","slug":"unreal-engine","source_id":34,"verified_at":"2026-09-29"},
+{"caution":"Compatibility depends on the exact server and bridge implementation; REAPER support is not a property of the model alone.","description":"Use an MCP server plus a REAPER ReaScript, extension, distant API, socket, or file bridge to control a live DAW project.","id":2,"name":"REAPER MCP","slug":"reaper","source_id":36,"verified_at":"2026-09-29"},
+{"caution":null,"description":"Read, search, edit, move, and manage files within configured roots.","id":3,"name":"Filesystem","slug":"filesystem","source_id":39,"verified_at":"2026-09-29"},
+{"caution":"Shell and SSH tools can mutate systems; host support does not imply safe sandboxing.","description":"Run local shell commands or administer a remote machine through a deliberately scoped tool or native harness shell.","id":4,"name":"Shell / SSH","slug":"shell-ssh","source_id":42,"verified_at":"2026-09-29"},
+{"caution":null,"description":"Automate browser pages, accessibility snapshots, navigation, and interaction.","id":5,"name":"Browser","slug":"browser","source_id":41,"verified_at":"2026-09-29"},
+{"caution":null,"description":"Inspect and modify local Git repositories or use GitHub APIs for repository, issue, pull-request, and workflow tasks.","id":6,"name":"Git / GitHub","slug":"git-github","source_id":40,"verified_at":"2026-09-29"},
+{"caution":null,"description":"Connect a host to a remote MCP server over Streamable HTTP or legacy HTTP+SSE where supported.","id":7,"name":"Generic remote MCP","slug":"remote-mcp","source_id":42,"verified_at":"2026-09-29"}
+]

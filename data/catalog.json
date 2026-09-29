@@ -438,10 +438,22 @@
       }
     ],
     "data_runs": [],
+    "harness_access_methods": [
+      {
+        "path": "snapshot/harness_access_methods/000000.json",
+        "sha256": "5ec5e20a7dfc7e0d3623aff1c36449aaf6988e9abf3298bff622056e948d06b9"
+      }
+    ],
+    "harness_claims": [
+      {
+        "path": "snapshot/harness_claims/000000.json",
+        "sha256": "fb86a0f4b7b30c0f89539305e6b982eebb9e8c8a0671cc074ec5a133499e965f"
+      }
+    ],
     "harness_mcp_capabilities": [
       {
         "path": "snapshot/harness_mcp_capabilities/000000.json",
-        "sha256": "6267b0deb71cbd447f1bde1d213a1a81dbcc296d54143241a2de871675ef75c4"
+        "sha256": "7e227b9915c8df21bc87b49a13ab73ad45aba4e36a1bbb92bc945daacc4f7773"
       }
     ],
     "harness_model_overrides": [],
@@ -454,7 +466,7 @@
     "harnesses": [
       {
         "path": "snapshot/harnesses/000000.json",
-        "sha256": "a41ed2bcc350bf7d7f5d468315db56c0cdbfc9bb32a36a1080794d20a376e2ef"
+        "sha256": "cf08b7e789d2d1ae54b6dea11cf992aa28cf8d5e5f10db8ba4f29888cf68d9d9"
       }
     ],
     "labs": [
@@ -875,6 +887,12 @@
       }
     ],
     "route_capabilities": [],
+    "route_compatibility_evidence": [
+      {
+        "path": "snapshot/route_compatibility_evidence/000000.json",
+        "sha256": "407715d9f7879a09748b4b52607a08968cb6c7a191966681e2fef43ad1b8964d"
+      }
+    ],
     "routes": [],
     "selected_facts": [
       {
@@ -1217,13 +1235,31 @@
     "sources": [
       {
         "path": "snapshot/sources/000000.json",
-        "sha256": "e5021ddf9e31f780337b15353daf1d56c7657e2ca9cdb251fb28d1088f4b20f3"
+        "sha256": "96734a40dfd4a780e15af3dbfa317802e7652734a2ebf274497b0df087b187b9"
       }
     ],
     "use_cases": [
       {
         "path": "snapshot/use_cases/000000.json",
         "sha256": "1eb6bce035e2d652e90889cf5fe6dc558ac57cf4b9061c4f51b3eb528f6bc1b2"
+      }
+    ],
+    "workflow_harness_compatibility": [
+      {
+        "path": "snapshot/workflow_harness_compatibility/000000.json",
+        "sha256": "d54c51bcfb69345f2672bb6356128d56b762f77be2dab9be58377ddaf41d6d0d"
+      }
+    ],
+    "workflow_integrations": [
+      {
+        "path": "snapshot/workflow_integrations/000000.json",
+        "sha256": "f704ab2365576eab53f514bd0100f54e84444275eb1b3cd4bd0780a9140368d0"
+      }
+    ],
+    "workflows": [
+      {
+        "path": "snapshot/workflows/000000.json",
+        "sha256": "6df16a4f60eb8589fe9268b93bc5ee1fa1cb1115d32019463eb309c4cc876858"
       }
     ]
   },

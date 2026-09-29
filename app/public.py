@@ -126,12 +126,21 @@ def filtered_routes(args):
     if filters.get("harness") and not harness:
         return [], filters
     filters.pop("harness", None)
+    workflow = None
+    if filters.get("workflow"):
+        workflow = get_db().execute(
+            "SELECT id,slug,name FROM workflows WHERE slug=? OR name=?",
+            (filters["workflow"], filters["workflow"]),
+        ).fetchone()
+        if not workflow:
+            return [], filters
+    route_filters = {key: value for key, value in filters.items() if key != "workflow"}
     try:
         requested_limit = min(250, max(1, int(filters.get("limit", 100))))
     except (TypeError, ValueError):
         requested_limit = 100
-    needs_compatibility = bool(harness or filters.get("mcp") == "1")
-    candidates = route_rows(get_db(), {**filters, "limit": 10_000} if needs_compatibility else filters)
+    needs_compatibility = bool(harness or route_filters.get("mcp") == "1" or workflow)
+    candidates = route_rows(get_db(), {**route_filters, "limit": 10_000} if needs_compatibility else route_filters)
     if not harness and filters.get("mcp") == "1":
         # MCP is a workflow property: require at least one documented MCP harness route.
         mcp_harnesses = get_db().execute("SELECT id FROM harnesses WHERE supports_mcp=1").fetchall()
@@ -142,7 +151,11 @@ def filtered_routes(args):
     if harness:
         kept = []
         for row in candidates:
-            match = compatibility_for(get_db(), harness["id"], row["offering_id"], filters.get("mcp") == "1")
+            match = compatibility_for(
+                get_db(), harness["id"], row["offering_id"],
+                route_filters.get("mcp") == "1" or workflow is not None,
+                workflow["id"] if workflow else None,
+            )
             if match["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}:
                 kept.append({**row, "_compatibility": match})
         return kept[:requested_limit], filters
@@ -155,7 +168,7 @@ def api_index():
         "name": "UseThisModel public read-only API",
         "documentation": url_for("public.api_docs", _external=True),
         "response": {"data": "resource or list", "meta": {"api_version": "v1", "count": "integer"}},
-        "endpoints": ["models", "models/{canonical-slug}", "providers", "harnesses",
+        "endpoints": ["models", "models/{canonical-slug}", "providers", "harnesses", "workflows",
                       "offers", "free-routes", "releases", "benchmarks", "compatibility", "search"],
     })
 
@@ -220,6 +233,27 @@ def api_harnesses():
         item["slug"] = slugify(row["name"])
         item["mcp_capabilities"] = [dict(x) for x in get_db().execute(
             "SELECT transport,state,note FROM harness_mcp_capabilities WHERE harness_id=? ORDER BY transport", (row["id"],))]
+        item["claims"] = [dict(x) for x in get_db().execute(
+            """SELECT hc.claim_key,hc.claim_value,hc.note,hc.verified_at,s.url source_url
+               FROM harness_claims hc JOIN sources s ON s.id=hc.source_id
+               WHERE hc.harness_id=? ORDER BY hc.claim_key""", (row["id"],))]
+        item["access_methods"] = [dict(x) for x in get_db().execute(
+            """SELECT ha.access_method,ha.state,ha.note,ha.verified_at,s.url source_url
+               FROM harness_access_methods ha JOIN sources s ON s.id=ha.source_id
+               WHERE ha.harness_id=? ORDER BY ha.access_method""", (row["id"],))]
+        data.append(item)
+    return _envelope(data)
+
+
+@public.get("/api/v1/workflows")
+def api_workflows():
+    data = []
+    for row in get_db().execute("SELECT * FROM workflows ORDER BY name"):
+        item = dict(row)
+        item["integrations"] = [dict(x) for x in get_db().execute(
+            """SELECT name,repository_url,transport,os_requirements,locality,tools_exposed,
+              maintenance_status,maintenance_note,verified_at FROM workflow_integrations
+              WHERE workflow_id=? ORDER BY name""", (row["id"],))]
         data.append(item)
     return _envelope(data)
 
@@ -294,10 +328,11 @@ def robots():
 @public.get("/sitemap.xml")
 def sitemap():
     root = request.url_root.rstrip("/")
-    urls = ["/", "/models", "/providers", "/harnesses", "/benchmarks", "/use-cases", "/offers", "/rankings", "/api"]
+    urls = ["/", "/models", "/providers", "/harnesses", "/workflows", "/benchmarks", "/use-cases", "/offers", "/rankings", "/api"]
     urls += ["/models/" + row[0] for row in get_db().execute("SELECT canonical_slug FROM models WHERE canonical_slug IS NOT NULL")]
     urls += ["/providers/" + slugify(row[0]) for row in get_db().execute("SELECT name FROM providers")]
     urls += ["/harnesses/" + slugify(row[0]) for row in get_db().execute("SELECT name FROM harnesses")]
+    urls += ["/workflows/" + row[0] for row in get_db().execute("SELECT slug FROM workflows")]
     urls += ["/benchmarks/" + slugify(f"{row[0]}-{row[1]}") for row in get_db().execute("SELECT name,version FROM benchmarks")]
     urls += ["/use-cases/" + row[0] for row in get_db().execute("SELECT slug FROM use_cases")]
     body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">" + "".join(
