@@ -1,0 +1,7 @@
+[
+{"harness_id":14,"id":1,"note":null,"source_id":4,"state":"YES","transport":"STDIO"},
+{"harness_id":14,"id":2,"note":null,"source_id":4,"state":"YES","transport":"STREAMABLE_HTTP"},
+{"harness_id":14,"id":3,"note":null,"source_id":4,"state":"YES","transport":"TOOLS"},
+{"harness_id":14,"id":4,"note":null,"source_id":4,"state":"YES","transport":"RESOURCES"},
+{"harness_id":14,"id":5,"note":null,"source_id":4,"state":"YES","transport":"PROMPTS"}
+]

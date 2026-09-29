@@ -1,0 +1,6 @@
+[
+{"category":"General/Reasoning/Coding","description":null,"id":1,"name":"LiveBench","source_id":5,"version":"2025-02"},
+{"category":"Coding agent","description":null,"id":2,"name":"SWE-bench Verified","source_id":6,"version":"500-instance human-filtered subset"},
+{"category":"Agentic coding","description":null,"id":3,"name":"Terminal-Bench","source_id":7,"version":"2.0"},
+{"category":"General/Reasoning/Coding/Agents","description":null,"id":4,"name":"Artificial Analysis Intelligence Index","source_id":8,"version":"4.3.2"}
+]

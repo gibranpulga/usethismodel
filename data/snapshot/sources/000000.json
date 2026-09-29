@@ -1,0 +1,11 @@
+[
+{"fetched_at":"2026-09-29 15:14:19","id":1,"name":"Models.dev catalog","reliability":"MEDIUM","source_type":"machine-readable catalog","url":"https://models.dev/api.json"},
+{"fetched_at":"2026-09-29 15:14:19","id":2,"name":"OpenRouter model API","reliability":"MEDIUM","source_type":"machine-readable catalog","url":"https://openrouter.ai/api/v1/models"},
+{"fetched_at":"2026-09-29 15:14:19","id":3,"name":"LiteLLM price map","reliability":"MEDIUM","source_type":"cross-check","url":"https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json"},
+{"fetched_at":"2026-09-29 15:14:19","id":4,"name":"Hermes MCP documentation","reliability":"HIGH","source_type":"documentation","url":"https://github.com/hermes-agent-org/hermes/blob/main/website/docs/user-guide/features/mcp.md"},
+{"fetched_at":"2026-09-29 15:14:19","id":5,"name":"LiveBench","reliability":"HIGH","source_type":"benchmark","url":"https://livebench.ai/"},
+{"fetched_at":"2026-09-29 15:14:19","id":6,"name":"SWE-bench","reliability":"HIGH","source_type":"benchmark","url":"https://www.swebench.com/"},
+{"fetched_at":"2026-09-29 15:14:19","id":7,"name":"Terminal-Bench","reliability":"HIGH","source_type":"benchmark","url":"https://www.tbench.ai/"},
+{"fetched_at":"2026-09-29 15:14:19","id":8,"name":"Artificial Analysis Intelligence Index","reliability":"HIGH","source_type":"benchmark","url":"https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index"},
+{"fetched_at":"2026-09-29 15:55:44","id":9,"name":"litellm","reliability":"MEDIUM","source_type":"machine-readable catalog","url":"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"}
+]

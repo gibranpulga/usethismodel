@@ -1,0 +1,6 @@
+[
+{"harness_id":3,"id":1,"note":"Configure the provider endpoint and API key.","provider_id":1,"source_id":1,"support_mode":"OPENAI_COMPATIBLE"},
+{"harness_id":3,"id":2,"note":"OpenRouter is supported by configuration.","provider_id":2,"source_id":1,"support_mode":"OPENROUTER"},
+{"harness_id":14,"id":3,"note":"Configured provider route.","provider_id":2,"source_id":4,"support_mode":"OPENROUTER"},
+{"harness_id":10,"id":4,"note":"OpenRouter model IDs are supported by configuration.","provider_id":2,"source_id":1,"support_mode":"OPENROUTER"}
+]

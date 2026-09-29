@@ -1,0 +1,5 @@
+[
+{"benchmark_id":1,"confidence":"LOW","confidence_interval":null,"evaluated_at":null,"harness_name":null,"id":1,"metric":"reported score","model_id":4,"model_version":null,"offering_id":null,"reasoning_setting":null,"scaffold":null,"score":65.1,"source_id":5},
+{"benchmark_id":1,"confidence":"LOW","confidence_interval":null,"evaluated_at":null,"harness_name":null,"id":2,"metric":"reported score","model_id":2,"model_version":null,"offering_id":null,"reasoning_setting":null,"scaffold":null,"score":63.4,"source_id":5},
+{"benchmark_id":1,"confidence":"LOW","confidence_interval":null,"evaluated_at":null,"harness_name":null,"id":3,"metric":"reported score","model_id":1,"model_version":null,"offering_id":null,"reasoning_setting":null,"scaffold":null,"score":71.2,"source_id":5}
+]

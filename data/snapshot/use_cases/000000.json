@@ -1,0 +1,20 @@
+[
+{"description":"General purpose work","id":1,"name":"General","slug":"general"},
+{"description":"Multi-step analysis","id":2,"name":"Reasoning","slug":"reasoning"},
+{"description":"Software development","id":3,"name":"Coding","slug":"coding"},
+{"description":"Autonomous repository work","id":4,"name":"Agentic Coding","slug":"agentic-coding"},
+{"description":"Structured tool use","id":5,"name":"Tool Calling","slug":"tool-calling"},
+{"description":"Extended agent tasks","id":6,"name":"Long-Horizon Agents","slug":"long-horizon-agents"},
+{"description":"Large-context work","id":7,"name":"Long Context","slug":"long-context"},
+{"description":"Image and document understanding","id":8,"name":"Vision","slug":"vision"},
+{"description":"Image generation or editing","id":9,"name":"Image","slug":"image"},
+{"description":"Video understanding or generation","id":10,"name":"Video","slug":"video"},
+{"description":"Audio understanding or generation","id":11,"name":"Audio","slug":"audio"},
+{"description":"Three-dimensional content","id":12,"name":"3D","slug":"3d"},
+{"description":"Fast responses","id":13,"name":"Low Latency","slug":"low-latency"},
+{"description":"Cost-sensitive work","id":14,"name":"Cheapest","slug":"cheapest"},
+{"description":"Redistributable weights","id":15,"name":"Open Weight","slug":"open-weight"},
+{"description":"On-premise deployment","id":16,"name":"Local/Self Hosted","slug":"local-self-hosted"},
+{"description":"Multiple-language work","id":17,"name":"Multilingual","slug":"multilingual"},
+{"description":"Structured analysis","id":18,"name":"Data Analysis","slug":"data-analysis"}
+]
