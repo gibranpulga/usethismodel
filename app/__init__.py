@@ -1,6 +1,8 @@
 import os
+import re
 import secrets
 from pathlib import Path
+from urllib.parse import urlencode
 
 from flask import Flask, abort, g, jsonify, redirect, render_template, request, url_for
 
@@ -22,7 +24,13 @@ from .query import (
     source_rows,
 )
 
-NAV = [("Home", "/"), ("Models", "/models"), ("Plans", "/plans"), ("Rankings", "/rankings"), ("Offers", "/offers"), ("Providers", "/providers"), ("Harnesses", "/harnesses"), ("Workflows", "/workflows"), ("Compatibility", "/compatibility"), ("My Setup", "/my-setup"), ("New Releases", "/new-releases"), ("Benchmarks", "/benchmarks"), ("Use Cases", "/use-cases"), ("Compare", "/compare"), ("Calculator", "/calculator")]
+NAV = [("Home", "/"), ("Models", "/models"), ("My Setup", "/my-setup"),
+       ("Compare", "/compare"), ("Offers", "/offers"), ("Calculator", "/calculator")]
+MORE_NAV = [("Compatibility", "/compatibility"), ("Plans", "/plans"),
+            ("New Releases", "/new-releases"), ("Harnesses", "/harnesses"),
+            ("Workflows", "/workflows"), ("Benchmarks", "/benchmarks"),
+            ("Providers", "/providers"), ("Use Cases", "/use-cases"),
+            ("Rankings", "/rankings")]
 PRESETS = {
     "free-tools": ("Free + Tools", {"free": "1", "tools": "1"}), "cheap-agent": ("Cheapest Agent Models", {"tools": "1", "use_case": "agentic-coding"}),
     "strong-coding": ("Strong Coding", {"tools": "1", "use_case": "coding"}), "best-value-coding": ("Best Value Coding", {"tools": "1", "use_case": "coding", "sort": "value"}),
@@ -68,6 +76,9 @@ def create_app(test_config=None):
         canonical = request.url_root.rstrip("/") + request.path
         return {
             "nav": NAV,
+            "more_nav": MORE_NAV,
+            "more_active": any(request.path == url or request.path.startswith(url + "/")
+                               for _, url in MORE_NAV),
             "current_path": request.path,
             "presets": PRESETS,
             "canonical_url": canonical,
@@ -99,7 +110,12 @@ def create_app(test_config=None):
             requested_limit = min(250, max(1, int(filters.get("limit", 100))))
         except (TypeError, ValueError):
             requested_limit = 100
+        try:
+            requested_offset = max(0, int(filters.get("offset", 0)))
+        except (TypeError, ValueError):
+            requested_offset = 0
         workflow = None
+        workflow_only = False
         if filters.get("workflow"):
             workflow = db().execute(
                 "SELECT id,name,slug FROM workflows WHERE slug=? OR name=?",
@@ -107,8 +123,18 @@ def create_app(test_config=None):
             ).fetchone()
             if not workflow:
                 return []
+            if not harness_names:
+                workflow_only = True
+                harness_names = [row["name"] for row in db().execute("""SELECT DISTINCT h.name
+                  FROM workflow_harness_compatibility whc
+                  JOIN workflow_integrations wi ON wi.id=whc.integration_id
+                  JOIN harnesses h ON h.id=whc.harness_id
+                  WHERE wi.workflow_id=? AND whc.state IN ('YES','CONFIGURATION','PARTIAL')""",
+                  (workflow["id"],)).fetchall()]
         route_filters = {key: value for key, value in filters.items() if key != "workflow"}
-        query_filters = {**route_filters, "limit": 10_000} if harness_names else route_filters
+        candidate_limit = min(1_000, max(250, requested_offset + requested_limit * 20))
+        query_filters = ({**route_filters, "limit": candidate_limit, "offset": 0}
+                         if harness_names else route_filters)
         result = route_rows(db(), query_filters)
         if not harness_names:
             return result
@@ -123,13 +149,17 @@ def create_app(test_config=None):
                 workflow["id"] if workflow else None,
             )) for harness in harnesses]
             allowed = {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}
-            if all(match["status"] in allowed for _, match in matches):
-                match = matches[0][1]
-                if len(matches) > 1:
+            qualifies = (any(match["status"] in allowed for _, match in matches)
+                         if workflow_only else all(match["status"] in allowed for _, match in matches))
+            if qualifies:
+                match = next(value for _, value in matches if value["status"] in allowed)
+                if len(matches) > 1 and not workflow_only:
                     match = {**match, "explanation": " ".join(f"{name}: {value['explanation']}" for name, value in matches)}
                 route["compatibility"] = match
                 kept.append(route)
-        return kept[:requested_limit]
+                if len(kept) >= requested_offset + requested_limit:
+                    break
+        return kept[requested_offset:requested_offset + requested_limit]
 
     @app.get("/health")
     def health():
@@ -139,10 +169,10 @@ def create_app(test_config=None):
     @app.get("/")
     def home():
         filters, interpreted = interpreted_filters()
-        latest = route_rows(db(), {"release": "week", "sort": "newest", "limit": 6})
+        latest = route_rows(db(), {"release": "week", "sort": "newest", "limit": 3})
         popular = rows("""SELECT m.id,m.canonical_name,m.canonical_slug,COUNT(o.id) route_count
           FROM models m JOIN provider_offerings o ON o.model_id=m.id GROUP BY m.id
-          ORDER BY route_count DESC,m.canonical_name LIMIT 6""")
+          ORDER BY route_count DESC,m.canonical_name LIMIT 3""")
         changes = rows("""SELECT o.id offering_id,m.canonical_name,p.name provider_name,pr.price_type,
           pr.amount,pr.unit,pr.valid_from FROM pricing_records pr
           JOIN provider_offerings o ON o.id=pr.offering_id JOIN models m ON m.id=o.model_id
@@ -154,16 +184,34 @@ def create_app(test_config=None):
             "index.html", title="AI model, provider route & harness finder", filters=filters,
             interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters)[:6],
             deals=offer_rows(db())[:4], latest=latest, popular=popular,
-            coding=route_rows(db(), {"tools": "1", "use_case": "coding", "sort": "value", "limit": 6}),
-            home_harnesses=rows("SELECT id,name,interfaces,supports_mcp FROM harnesses ORDER BY supports_mcp DESC,name LIMIT 6"),
-            media_routes=route_rows(db(), {"type": "3D generation", "limit": 6}), changes=changes,
+            coding=route_rows(db(), {"tools": "1", "use_case": "coding", "sort": "value", "limit": 3}),
+            home_harnesses=rows("SELECT id,name,interfaces,supports_mcp FROM harnesses WHERE name IN ('Hermes Agent','Codex CLI','OpenCode','Pi') ORDER BY name"),
+            media_routes=route_rows(db(), {"type": "3D generation", "limit": 3}), changes=changes[:3],
             meta_description="Find current AI model routes, deals, new releases, coding models, harness compatibility, and 3D generation APIs from source-backed data.",
         )
 
     @app.get("/models")
     def models():
         filters, interpreted = interpreted_filters()
-        return render_template("models.html", title="Models & provider routes", filters=filters, interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters))
+        try:
+            page = max(1, int(filters.get("page", 1)))
+        except (TypeError, ValueError):
+            page = 1
+        page_size = 18
+        display_filters = dict(filters)
+        if not display_filters:
+            display_filters["sort"] = "featured"
+        query_filters = {**display_filters, "limit": page_size + 1,
+                         "offset": (page - 1) * page_size}
+        found = compatible_routes(query_filters)
+        page_params = {key: value for key, value in filters.items() if key != "page"}
+        return render_template(
+            "models.html", title="Models & provider routes", filters=display_filters,
+            interpreted=interpreted, options=filter_options(db()), routes=found[:page_size],
+            page=page, has_more=len(found) > page_size, default_view=not filters,
+            prev_url=("/models?" + urlencode({**page_params, "page": page - 1})) if page > 1 else None,
+            next_url=("/models?" + urlencode({**page_params, "page": page + 1})) if len(found) > page_size else None,
+        )
 
     @app.get("/models/<int:model_id>")
     def model_detail(model_id):
@@ -178,18 +226,19 @@ def create_app(test_config=None):
         if not model:
             abort(404)
         model_id = model["id"]
-        offerings = route_rows(db(), {"model_id": model_id, "limit": 250})
+        all_offerings = route_rows(db(), {"model_id": model_id, "limit": 250})
+        offerings = all_offerings[:12]
         use_cases = rows("SELECT u.name,mus.classification,mus.rationale,mus.confidence FROM model_use_case_scores mus JOIN use_cases u ON u.id=mus.use_case_id WHERE mus.model_id=? ORDER BY u.name", (model_id,))
         benchmarks = rows("SELECT b.name,b.version,br.score,br.metric,br.confidence FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id WHERE br.model_id=? ORDER BY b.name", (model_id,))
         harnesses = []
         for harness in rows("SELECT id,name FROM harnesses ORDER BY name"):
-            supported = [compatibility_for(db(), harness["id"], o["offering_id"]) for o in offerings]
+            supported = [compatibility_for(db(), harness["id"], o["offering_id"]) for o in all_offerings]
             supported = [x for x in supported if x["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}]
             if supported:
                 harnesses.append({"name": harness["name"], **supported[0]})
         media = db().execute("SELECT * FROM model_media_features WHERE model_id=?", (model_id,)).fetchone()
-        verified = max([o["fetched_at"] for o in offerings if o["fetched_at"]] + ([media["last_verified_at"]] if media and media["last_verified_at"] else []), default=None)
-        return render_template("model_detail.html", title=f"{model['canonical_name']} prices, providers & compatibility", item=dict(model), offerings=offerings, use_cases=use_cases, benchmarks=benchmarks, harnesses=harnesses, media=dict(media) if media else None, sources=source_rows(db(), model_id=model_id), last_verified_at=verified, canonical_url=request.url_root.rstrip('/') + url_for('model_detail_slug', model_slug=model_slug), meta_description=f"{model['canonical_name']} provider routes, current pricing, limits, tool support, benchmarks, harness compatibility, sources, and verification dates.")
+        verified = max([o["fetched_at"] for o in all_offerings if o["fetched_at"]] + ([media["last_verified_at"]] if media and media["last_verified_at"] else []), default=None)
+        return render_template("model_detail.html", title=f"{model['canonical_name']} prices, providers & compatibility", item=dict(model), offerings=offerings, offering_count=len(all_offerings), use_cases=use_cases, benchmarks=benchmarks, harnesses=harnesses, media=dict(media) if media else None, sources=source_rows(db(), model_id=model_id), last_verified_at=verified, canonical_url=request.url_root.rstrip('/') + url_for('model_detail_slug', model_slug=model_slug), meta_description=f"{model['canonical_name']} provider routes, current pricing, limits, tool support, benchmarks, harness compatibility, sources, and verification dates.")
 
     @app.get("/routes/<int:offering_id>")
     def route_detail(offering_id):
@@ -314,20 +363,27 @@ def create_app(test_config=None):
     @app.get("/compatibility")
     def compatibility():
         filters, interpreted = interpreted_filters()
-        return render_template("compatibility.html", title="Compatibility finder", filters=filters, interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters) if filters.get("harness") else [])
+        matches = compatible_routes({**filters, "limit": 13}) if filters.get("harness") else []
+        return render_template("compatibility.html", title="Compatibility finder", filters=filters, interpreted=interpreted, options=filter_options(db()), routes=matches[:12], has_more=len(matches) > 12)
 
     @app.get("/compare")
     def compare():
         raw_ids = request.args.getlist("ids")
         ids = [int(value) for raw in raw_ids for value in raw.split(",") if value.isdigit()][:5]
-        all_routes = route_rows(db())
+        compare_query = request.args.get("q", "").strip()
+        query_parts = [part.strip() for part in re.split(r"\s+(?:vs\.?|versus|with)\s+|,", compare_query, flags=re.I) if part.strip()]
+        all_routes = []
+        for part in query_parts or [""]:
+            all_routes.extend(route_rows(db(), {"q": part, "limit": 20, "sort": "featured"}))
+        all_routes = list({route["offering_id"]: route for route in all_routes}.values())[:40]
         selected = []
         for offering_id in ids:
             route = next(iter(route_rows(db(), {"offering_id": offering_id})), None)
             if route:
                 selected.append(route)
         histories = {r["offering_id"]: price_history(db(), r["offering_id"]) for r in selected}
-        return render_template("compare.html", title="Compare routes", routes=selected, all_routes=all_routes, histories=histories)
+        return render_template("compare.html", title="Compare routes", routes=selected,
+                               all_routes=all_routes, histories=histories, compare_query=compare_query)
 
     @app.get("/plans")
     def plans():
@@ -371,12 +427,18 @@ def create_app(test_config=None):
             cache_price = route["cache_read_price"] if route["cache_read_price"] is not None else route["input_price"]
             total = (input_tokens * ((1-cache_share)*route["input_price"] + cache_share*cache_price) + output_tokens * route["output_price"]) / 1_000_000
             calculated.append({**route, "monthly_cost": total * (.5 if batch and route["batch"] else 1), "batch_applied": batch and route["batch"]})
-        return render_template("calculator.html", title="Cost calculator", filters=filters, options=filter_options(db()), routes=sorted(calculated, key=lambda r: r["monthly_cost"]), plans=plan_rows(db(), {"subscription": "1", "coding": "1"}), selected_plan=dict(selected_plan) if selected_plan else None, input_tokens=input_tokens, output_tokens=output_tokens, cache_share=round(cache_share*100), batch=batch)
+        calculated = sorted(calculated, key=lambda r: r["monthly_cost"])
+        return render_template("calculator.html", title="Cost calculator", filters=filters, options=filter_options(db()), routes=calculated[:12], route_count=len(calculated), plans=plan_rows(db(), {"subscription": "1", "coding": "1"}), selected_plan=dict(selected_plan) if selected_plan else None, input_tokens=input_tokens, output_tokens=output_tokens, cache_share=round(cache_share*100), batch=batch)
 
     @app.get("/offers")
     def offers():
         differences = pricing_differences(db())
-        return render_template("offers.html", title="Offers & deals", offers=offer_rows(db()), expired=offer_rows(db(), include_expired=True), free_routes=openrouter_free_rows(db()), discounts=differences["discounts"], direct_differences=differences["direct"])
+        current_offers = offer_rows(db())
+        free_routes = openrouter_free_rows(db())
+        return render_template("offers.html", title="Offers & deals", offers=current_offers[:8],
+          offer_count=len(current_offers), expired=offer_rows(db(), include_expired=True),
+          free_routes=free_routes[:8], free_count=len(free_routes),
+          discounts=differences["discounts"][:8], direct_differences=differences["direct"][:8])
 
     @app.get("/rankings")
     def rankings():
@@ -387,7 +449,56 @@ def create_app(test_config=None):
 
     @app.get("/my-setup")
     def my_setup():
-        return render_template("my_setup.html", title="My Setup", harnesses=rows("SELECT id,name,interfaces,open_source,supports_mcp FROM harnesses ORDER BY name"))
+        selected_harnesses = request.args.getlist("harnesses")
+        selected_workflows = request.args.getlist("workflows")
+        setup_routes = []
+        if selected_harnesses or selected_workflows:
+            base_filters = {"tools": "1", "sort": "value", "limit": 500}
+            if "coding" in selected_workflows:
+                base_filters["use_case"] = "coding"
+            candidates = route_rows(db(), base_filters)
+            harness_rows = [db().execute("SELECT id,name FROM harnesses WHERE name=?", (name,)).fetchone()
+                            for name in selected_harnesses]
+            workflow_rows = [db().execute("SELECT id,name FROM workflows WHERE slug=?", (slug,)).fetchone()
+                             for slug in selected_workflows if slug != "coding"]
+            allowed = {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}
+            workflow_hosts = {workflow["id"]: db().execute("""SELECT DISTINCT h.id,h.name
+              FROM workflow_harness_compatibility whc
+              JOIN workflow_integrations wi ON wi.id=whc.integration_id
+              JOIN harnesses h ON h.id=whc.harness_id
+              WHERE wi.workflow_id=? AND whc.state IN ('YES','CONFIGURATION','PARTIAL')""",
+              (workflow["id"],)).fetchall() for workflow in workflow_rows if workflow}
+            for route in candidates:
+                checks = []
+                for harness in [h for h in harness_rows if h]:
+                    if workflow_rows:
+                        checks.extend(compatibility_for(db(), harness["id"], route["offering_id"], True, workflow["id"])
+                                      for workflow in workflow_rows if workflow)
+                    else:
+                        checks.append(compatibility_for(db(), harness["id"], route["offering_id"], False))
+                workflow_only_groups = []
+                if not selected_harnesses and workflow_rows:
+                    workflow_only_groups = [[compatibility_for(
+                        db(), host["id"], route["offering_id"], True, workflow["id"]
+                    ) for host in workflow_hosts.get(workflow["id"], [])] for workflow in workflow_rows]
+                    checks = [check for group in workflow_only_groups for check in group]
+                qualifies = (
+                    not selected_harnesses and not workflow_rows
+                    or workflow_only_groups and all(any(check["status"] in allowed for check in group)
+                                                    for group in workflow_only_groups)
+                    or selected_harnesses and checks and all(check["status"] in allowed for check in checks)
+                )
+                if qualifies:
+                    compatible_check = next((check for check in checks if check["status"] in allowed), None)
+                    if compatible_check:
+                        route["compatibility"] = compatible_check
+                    setup_routes.append(route)
+                if len(setup_routes) == 6:
+                    break
+        return render_template("my_setup.html", title="My Setup",
+          harnesses=rows("SELECT id,name,interfaces,open_source,supports_mcp FROM harnesses ORDER BY name"),
+          setup_routes=setup_routes, selected_harnesses=selected_harnesses,
+          selected_workflows=selected_workflows)
 
     @app.get("/new-releases")
     def releases():

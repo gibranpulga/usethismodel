@@ -1,11 +1,11 @@
 const STORAGE_KEY = 'utm-personal-v1';
 function readPersonal() {
-  try { return {version: 1, harnesses: [], routes: [], entities: [], comparison: [], ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')}; }
-  catch (_) { return {version: 1, harnesses: [], routes: [], entities: [], comparison: []}; }
+  try { return {version: 1, harnesses: [], workflows: [], routes: [], entities: [], comparison: [], ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')}; }
+  catch (_) { return {version: 1, harnesses: [], workflows: [], routes: [], entities: [], comparison: []}; }
 }
 function writePersonal(value) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(value)); return true; } catch (_) { return false; } }
 function escapeHtml(value) { return String(value || '').replace(/[&<>"']/g, (char) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char])); }
-function routePayload(card) { const link = card.querySelector('.route-title'); return {key: card.dataset.routeKey, label: link?.textContent.trim(), via: card.querySelector('.route-via')?.textContent.trim(), href: link?.getAttribute('href')}; }
+function routePayload(card) { const model = card.querySelector('.route-title'); const route = card.querySelector('.route-link'); const pin = card.querySelector('[data-pin-route]'); return {key: card.dataset.routeKey, id: pin?.dataset.offeringId, label: model?.textContent.trim(), via: card.querySelector('.route-via')?.textContent.trim(), href: route?.getAttribute('href')}; }
 function refreshPinButtons() { const saved = readPersonal(); document.querySelectorAll('[data-pin-route]').forEach((button) => { const active = saved.routes.some((route) => route.key === button.closest('[data-route-key]')?.dataset.routeKey); button.classList.toggle('active', active); button.textContent = active ? '★' : '☆'; button.setAttribute('aria-pressed', String(active)); }); }
 function refreshEntityPins() { const saved = readPersonal(); document.querySelectorAll('[data-pin-entity]').forEach((button) => { const active = saved.entities.some((item) => item.key === button.dataset.key); button.classList.toggle('active', active); button.textContent = active ? '★' : '☆'; button.setAttribute('aria-pressed', String(active)); }); }
 
@@ -35,15 +35,19 @@ document.addEventListener('click', (event) => {
     const saved = readPersonal(); saved.comparison = [...new URLSearchParams(location.search).getAll('ids').flatMap((value) => value.split(','))]; writePersonal(saved);
     const status = document.querySelector('.save-status'); if (status) status.textContent = 'Comparison saved on this device.';
   }
+  if (event.target.closest('[data-compare-shortlist]')) {
+    const ids = readPersonal().routes.map((route) => route.id).filter(Boolean).slice(0, 5);
+    const feedback = document.querySelector('.compare-feedback');
+    if (ids.length < 2) { if (feedback) feedback.textContent = 'Pin at least two exact provider routes first.'; return; }
+    window.location.href = `/compare?ids=${ids.join(',')}`;
+  }
 });
 
 const setup = document.querySelector('[data-my-setup]');
 if (setup) {
   const saved = readPersonal();
-  setup.querySelectorAll('input[type=checkbox]').forEach((input) => { input.checked = saved.harnesses.includes(input.value); });
-  const updateLink = () => { const values = [...setup.querySelectorAll('input:checked')].map((input) => input.value); const link = setup.querySelector('[data-setup-finder]'); link.href = values.length ? `/models?harnesses=${encodeURIComponent(values.join(','))}&tools=1&sort=value` : '/models'; };
-  updateLink(); setup.addEventListener('change', updateLink);
-  setup.querySelector('[data-save-setup]')?.addEventListener('click', () => { const state = readPersonal(); state.harnesses = [...setup.querySelectorAll('input:checked')].map((input) => input.value); const ok = writePersonal(state); setup.querySelector('.save-status').textContent = ok ? 'Setup saved locally. No keys or account data were stored.' : 'Browser storage is unavailable.'; updateLink(); });
+  if (setup.dataset.hasQuery !== 'true') setup.querySelectorAll('input[type=checkbox]').forEach((input) => { input.checked = input.name === 'harnesses' ? saved.harnesses.includes(input.value) : saved.workflows.includes(input.value); });
+  setup.addEventListener('submit', () => { const state = readPersonal(); state.harnesses = [...setup.querySelectorAll('input[name=harnesses]:checked')].map((input) => input.value); state.workflows = [...setup.querySelectorAll('input[name=workflows]:checked')].map((input) => input.value); writePersonal(state); });
   const pinned = document.querySelector('[data-pinned-routes]'); if (saved.routes.length) pinned.innerHTML = saved.routes.map((r) => `<a class="data-tile" href="${escapeHtml(r.href)}"><strong>${escapeHtml(r.label)}</strong><small>${escapeHtml(r.via)}</small></a>`).join('');
   const entities = document.querySelector('[data-pinned-entities]'); if (saved.entities.length) entities.innerHTML = saved.entities.map((item) => `<a class="data-tile" href="${escapeHtml(item.href)}"><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.key.split(':')[0])}</small></a>`).join('');
   const comparison = document.querySelector('[data-saved-comparison]'); if (saved.comparison.length) comparison.innerHTML = `<a class="button secondary" href="/compare?ids=${saved.comparison.join(',')}">Open saved comparison (${saved.comparison.length})</a>`;

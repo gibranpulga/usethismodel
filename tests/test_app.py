@@ -424,6 +424,60 @@ def test_search_keeps_model_punctuation_and_keyword_boundaries(client):
     assert client.get("/api/v1/free-routes?tools=true").status_code == 200
 
 
+def test_product_audit_default_view_is_bounded_and_decision_first(client):
+    response = client.get("/models")
+    assert response.status_code == 200
+    assert response.data.count(b'class="route-card"') == 18
+    assert b"Useful starting points" in response.data
+    assert b"max output price" in response.data
+    assert b"Required capabilities" in response.data
+    assert b"Next" in response.data
+    assert response.data.index(b"Required capabilities") < response.data.index(b"Advanced filters")
+
+
+@pytest.mark.parametrize(
+    "query,required",
+    [
+        ("unreal", b"Workflow: Unreal"),
+        ("reaper mcp", b"Workflow: Reaper"),
+        ("deals right now", b"Active deal"),
+        ("new models this week", b"Release: this week"),
+        ("3d", b"Category: 3D generation"),
+    ],
+)
+def test_product_language_search_is_forgiving(client, query, required):
+    response = client.get("/models", query_string={"q": query})
+    assert response.status_code == 200
+    assert required in response.data
+
+
+def test_my_setup_and_compare_are_route_specific_and_bounded(client):
+    setup = client.get("/my-setup?harnesses=OpenCode&workflows=unreal-engine")
+    assert setup.status_code == 200
+    assert b"Good choices for your setup" in setup.data
+    assert b"EXPLICIT MATCHING RULES" in setup.data
+    assert 1 <= setup.data.count(b'class="route-card"') <= 6
+
+    compare = client.get("/compare?q=GLM+5.3+with+DeepSeek")
+    assert compare.status_code == 200
+    assert b"GLM-5.3" in compare.data
+    assert b"DeepSeek" in compare.data
+    assert b"EXACT PROVIDER ROUTES" in compare.data
+
+
+def test_dense_decision_pages_limit_initial_rendering(client):
+    compatibility = client.get(
+        "/compatibility?workflow=unreal-engine&harness=OpenCode&tools=1&mcp=1"
+    )
+    assert compatibility.data.count(b'class="route-card"') <= 12
+    calculator = client.get("/calculator")
+    assert calculator.data.count(b'class="route-card"') <= 12
+    detail = client.get("/models/zhipuai/glm-5.3")
+    assert 1 <= detail.data.count(b'class="route-card"') <= 12
+    models = client.get("/models").data
+    assert all(label in models for label in (b"MODEL", b"PROVIDER ROUTE", b"PRICE", b"HARNESS FIT"))
+
+
 @pytest.mark.parametrize("path", [
     "/models?offering_id=nope", "/models?model_id=nope", "/models?provider_id=nope",
     "/calculator?input_tokens=nope&output_tokens=-5&cache_share=what",

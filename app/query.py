@@ -84,6 +84,24 @@ def interpret_search(filters):
         set_if_empty("release", "month", "Release: this month")
         set_if_empty("sort", "newest", "Sort: newest")
         text = re.sub(r"\b(?:newest|new)\s+(?:models?\s+)?this\s+month\b", " ", text)
+    elif re.search(r"\b(?:new|newest)\s+(?:models?\s+)?(?:this\s+week|last\s+7\s+days)\b", text):
+        set_if_empty("release", "week", "Release: this week")
+        set_if_empty("sort", "newest", "Sort: newest")
+        text = re.sub(r"\b(?:new|newest)\s+(?:models?\s+)?(?:this\s+week|last\s+7\s+days)\b", " ", text)
+    if re.search(r"\b(?:deals?|discounts?|offers?)\s+(?:right\s+now|today|available)?\b", text):
+        set_if_empty("deal", "1", "Active deal")
+        text = re.sub(r"\b(?:deals?|discounts?|offers?)\s+(?:right\s+now|today|available)?\b", " ", text)
+    workflow_phrases = {
+        "unreal engine": "unreal-engine",
+        "unreal": "unreal-engine",
+        "reaper": "reaper",
+    }
+    for phrase, workflow in workflow_phrases.items():
+        if re.search(rf"\b{re.escape(phrase)}(?:\s+mcp)?\b", text):
+            set_if_empty("workflow", workflow, f"Workflow: {phrase.title()}")
+            set_if_empty("mcp", "1", "MCP workflow")
+            text = re.sub(rf"\b{re.escape(phrase)}(?:\s+mcp)?\b", " ", text)
+            break
     if "commercial use" in text:
         set_if_empty("commercial", "1", "Commercial use: available")
         text = text.replace("commercial use", " ")
@@ -118,6 +136,10 @@ def route_rows(db, filters=None):
         limit = min(10_000, max(1, int(filters.get("limit", 100))))
     except (TypeError, ValueError):
         limit = 100
+    try:
+        offset = min(1_000_000, max(0, int(filters.get("offset", 0))))
+    except (TypeError, ValueError):
+        offset = 0
     clauses, params = ["1=1"], []
     if filters.get("offering_id") is not None:
         try:
@@ -228,14 +250,20 @@ def route_rows(db, filters=None):
           LEFT JOIN labs l ON l.id=m.lab_id
         WHERE {' AND '.join(clauses)}
         ORDER BY
+          CASE WHEN ?='featured' THEN CASE WHEN o.tool_support='YES' THEN 0 ELSE 1 END ELSE 0 END,
+          CASE WHEN ?='featured' THEN CASE WHEN m.released_at IS NULL THEN 1 ELSE 0 END ELSE 0 END,
+          CASE WHEN ?='featured' THEN m.released_at END DESC,
+          CASE WHEN ?='featured' THEN CASE WHEN active_deal THEN 0 ELSE 1 END ELSE 0 END,
           CASE WHEN ?='value' THEN CASE WHEN input_price IS NULL OR output_price IS NULL THEN 1 ELSE 0 END ELSE 0 END,
           CASE WHEN ?='value' THEN (0.7*input_price + 0.3*output_price) END,
           CASE WHEN ?='newest' THEN m.released_at END DESC,
           media_price IS NULL, input_price IS NULL, COALESCE(media_price,input_price), output_price, m.canonical_name, p.name
-        LIMIT ?
+        LIMIT ? OFFSET ?
     """
     sort = filters.get("sort", "price")
-    result = [dict(row) for row in db.execute(sql, [*params, sort, sort, sort, limit]).fetchall()]
+    result = [dict(row) for row in db.execute(
+        sql, [*params, sort, sort, sort, sort, sort, sort, sort, limit, offset]
+    ).fetchall()]
     for row in result:
         row["value_score"] = (
             0.7 * row["input_price"] + 0.3 * row["output_price"]
