@@ -7,4 +7,4 @@ COPY . .
 RUN mkdir -p /data && chown -R 10001:10001 /app /data
 USER 10001
 EXPOSE 8000
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} --workers 2 --access-logfile - --error-logfile - wsgi:app"]
+CMD ["sh", "-c", "exec gunicorn --preload --bind 0.0.0.0:${PORT} --workers 2 --access-logfile - --error-logfile - wsgi:app"]
