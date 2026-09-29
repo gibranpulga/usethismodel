@@ -165,7 +165,11 @@ def create_app(test_config=None):
         raw_ids = request.args.getlist("ids")
         ids = [int(value) for raw in raw_ids for value in raw.split(",") if value.isdigit()][:5]
         all_routes = route_rows(db())
-        selected = [r for r in all_routes if r["offering_id"] in ids]
+        selected = []
+        for offering_id in ids:
+            route = next(iter(route_rows(db(), {"offering_id": offering_id})), None)
+            if route:
+                selected.append(route)
         histories = {r["offering_id"]: price_history(db(), r["offering_id"]) for r in selected}
         return render_template("compare.html", title="Compare routes", routes=selected, all_routes=all_routes, histories=histories)
 
