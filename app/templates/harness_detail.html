@@ -1,0 +1,4 @@
+{% extends "placeholder.html" %}
+{% block content %}
+<main><h1>{{ title }}</h1><dl>{% for key, value in item.items() %}{% if value is not none %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endif %}{% endfor %}</dl><h2>MCP capabilities</h2><table><tr><th>Capability</th><th>State</th><th>Note</th></tr>{% for capability in capabilities %}<tr><td>{{ capability.transport }}</td><td>{{ capability.state }}</td><td>{{ capability.note or '' }}</td></tr>{% endfor %}</table></main>
+{% endblock %}

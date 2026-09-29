@@ -1,0 +1,5 @@
+{% extends "placeholder.html" %}
+{% block content %}
+<main><p>{{ kind }}</p><h1>{{ title }}</h1><dl>{% for key, value in item.items() %}{% if value is not none %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endif %}{% endfor %}</dl>
+<h2>Provider offerings</h2><table><tr><th>Provider / model</th><th>Context</th><th>Tools</th><th>Free status</th></tr>{% for offering in offerings %}<tr><td>{{ offering.provider_name or offering.model_name }} — {{ offering.api_model_id }}</td><td>{{ offering.context_limit or 'UNKNOWN' }}</td><td>{{ offering.tool_support }}</td><td>{{ offering.free_status }}</td></tr>{% endfor %}</table></main>
+{% endblock %}

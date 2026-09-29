@@ -1,0 +1,6 @@
+{% extends "placeholder.html" %}
+{% block content %}
+<main><h1>{{ title }}</h1><table><thead><tr>{% for column in columns %}<th>{{ column }}</th>{% endfor %}</tr></thead><tbody>
+{% for row in rows %}<tr><td><a href="{{ detail_prefix }}/{{ row.id }}">{{ row.label }}</a></td><td>{{ row.detail }}</td><td>{{ row.count }}</td>{% if columns|length == 4 %}<td>{{ row.status }}</td>{% endif %}</tr>{% endfor %}
+</tbody></table></main>
+{% endblock %}
