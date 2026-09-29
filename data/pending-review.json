@@ -1365,6 +1365,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "0a8773b292cb335c8df6707c",
+    "entity": "offering:3013",
+    "proposed_change": "input_price",
+    "current_value": "0.0249",
+    "proposed_value": "0.42",
+    "sources": "[\"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json\"]",
+    "evidence": "Price increased by more than 10x without an explanation; manual review required",
+    "confidence": "LOW",
+    "reason": "Price increased by more than 10x without an explanation; manual review required",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
+  },
+  {
     "id": "0a8f25cb95926242620d3b57",
     "entity": "offering:8300",
     "proposed_change": "output_price",
@@ -4784,6 +4797,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "21caacda45adb816962de9e2",
+    "entity": "offering:2864",
+    "proposed_change": "output_price",
+    "current_value": "2.04",
+    "proposed_value": "4.0",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://models.dev/api.json\"]",
+    "evidence": "Selected openrouter (20); alternative models.dev (30)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
+  },
+  {
     "id": "21d02586e1dd2bff79ba24be",
     "entity": "offering:2844",
     "proposed_change": "output_price",
@@ -6162,6 +6188,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "29b8d7022d5ee11f5d3680c5",
+    "entity": "offering:1085",
+    "proposed_change": "cache_read_price",
+    "current_value": "0.003625",
+    "proposed_value": "0.044",
+    "sources": "[\"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json\"]",
+    "evidence": "Price increased by more than 10x without an explanation; manual review required",
+    "confidence": "LOW",
+    "reason": "Price increased by more than 10x without an explanation; manual review required",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
+  },
+  {
     "id": "29dfbbb02171fd81c9be0a2c",
     "entity": "model:5",
     "proposed_change": "open_weights",
@@ -6576,6 +6615,19 @@
     "reason": "Sources disagree; displayed value follows precedence",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "2c30b89f82eacc725c390fb1",
+    "entity": "offering:8408",
+    "proposed_change": "cache_read_price",
+    "current_value": "0.0028",
+    "proposed_value": "0.08",
+    "sources": "[\"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json\"]",
+    "evidence": "Price increased by more than 10x without an explanation; manual review required",
+    "confidence": "LOW",
+    "reason": "Price increased by more than 10x without an explanation; manual review required",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
   },
   {
     "id": "2c51ae38b1f7349af0b58e98",
@@ -7811,6 +7863,19 @@
     "reason": "Conflicting values within one source; retained previous value",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "345116c2dcccc099f0a9f6d9",
+    "entity": "offering:2793",
+    "proposed_change": "input_price",
+    "current_value": "0.4734",
+    "proposed_value": "0.4749",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://models.dev/api.json\"]",
+    "evidence": "Selected openrouter (20); alternative models.dev (30)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
   },
   {
     "id": "3474fe4fe0717bd82dc700aa",
@@ -9423,6 +9488,19 @@
     "reason": "Legacy invalid token limit quarantined",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "40636e3f7b965b9c07a16e8e",
+    "entity": "offering:2864",
+    "proposed_change": "cache_read_price",
+    "current_value": "0.102",
+    "proposed_value": "0.19",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://models.dev/api.json\"]",
+    "evidence": "Selected openrouter (20); alternative models.dev (30)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
   },
   {
     "id": "40a41be625cad5a368cfc2a7",
@@ -12441,6 +12519,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "598038a2672fe0ed30494656",
+    "entity": "offering:6035",
+    "proposed_change": "input_price",
+    "current_value": "0.03",
+    "proposed_value": "0.5",
+    "sources": "[\"https://models.dev/api.json\"]",
+    "evidence": "Price increased by more than 10x without an explanation; manual review required",
+    "confidence": "LOW",
+    "reason": "Price increased by more than 10x without an explanation; manual review required",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
+  },
+  {
     "id": "59984ae6b573ff2a9dab7009",
     "entity": "offering:2849",
     "proposed_change": "reasoning",
@@ -13520,6 +13611,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "61283bb04a61066f43e46003",
+    "entity": "offering:2793",
+    "proposed_change": "cache_read_price",
+    "current_value": "0.3787",
+    "proposed_value": "0.3799",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://models.dev/api.json\"]",
+    "evidence": "Selected openrouter (20); alternative models.dev (30)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
+  },
+  {
     "id": "6136aa3c2139558394db59fa",
     "entity": "model:1135",
     "proposed_change": "release_date",
@@ -13622,6 +13726,19 @@
     "reason": "Invalid or unsupported structured value quarantined",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "6193e5b6000130f9796f6dbf",
+    "entity": "offering:7653",
+    "proposed_change": "input_price",
+    "current_value": "0.03",
+    "proposed_value": "0.39",
+    "sources": "[\"https://models.dev/api.json\"]",
+    "evidence": "Price increased by more than 10x without an explanation; manual review required",
+    "confidence": "LOW",
+    "reason": "Price increased by more than 10x without an explanation; manual review required",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
   },
   {
     "id": "61cca34297630c81537c405c",
@@ -15847,6 +15964,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "71449c7d1d1c46b5ab7ff764",
+    "entity": "offering:2",
+    "proposed_change": "max_output_tokens",
+    "current_value": "943717",
+    "proposed_value": "131072",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://models.dev/api.json\"]",
+    "evidence": "Selected openrouter (20); alternative models.dev (30)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
+  },
+  {
     "id": "717477fe9906f1f24aa69d3b",
     "entity": "offering:4823",
     "proposed_change": "context_window",
@@ -17888,6 +18018,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "8001ddcc24d1503dfba2ab67",
+    "entity": "offering:2864",
+    "proposed_change": "max_output_tokens",
+    "current_value": "262144",
+    "proposed_value": "131072",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json\"]",
+    "evidence": "Selected openrouter (20); alternative litellm (40)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
+  },
+  {
     "id": "801775c992a00db1f4bcf391",
     "entity": "model:57",
     "proposed_change": "release_date",
@@ -18772,6 +18915,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "8668c0eacc4e65b985df7477",
+    "entity": "offering:7653",
+    "proposed_change": "input_price",
+    "current_value": "0.03",
+    "proposed_value": "0.39",
+    "sources": "[\"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json\"]",
+    "evidence": "Price increased by more than 10x without an explanation; manual review required",
+    "confidence": "LOW",
+    "reason": "Price increased by more than 10x without an explanation; manual review required",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
+  },
+  {
     "id": "86dd34923ada0dbcbc899338",
     "entity": "model:1140",
     "proposed_change": "open_weights",
@@ -19537,6 +19693,19 @@
     "reason": "Invalid or unsupported structured value quarantined",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "8c26070686064cafc5c5d9b8",
+    "entity": "offering:2864",
+    "proposed_change": "max_output_tokens",
+    "current_value": "262144",
+    "proposed_value": "131072",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://models.dev/api.json\"]",
+    "evidence": "Selected openrouter (20); alternative models.dev (30)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
   },
   {
     "id": "8c2f39b12bb279641ace145c",
@@ -20967,6 +21136,19 @@
     "reason": "Conflicting values within one source; retained previous value",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "95cda41ab6c5d8ea2547571c",
+    "entity": "offering:2890",
+    "proposed_change": "input_price",
+    "current_value": "0.02",
+    "proposed_value": "0.3",
+    "sources": "[\"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json\"]",
+    "evidence": "Price increased by more than 10x without an explanation; manual review required",
+    "confidence": "LOW",
+    "reason": "Price increased by more than 10x without an explanation; manual review required",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
   },
   {
     "id": "95d1c0ecbf14a1ea17815f35",
@@ -27846,6 +28028,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "c8529d3472860402fd683f25",
+    "entity": "offering:2",
+    "proposed_change": "output_price",
+    "current_value": "4.4",
+    "proposed_value": "4.0",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://models.dev/api.json\"]",
+    "evidence": "Selected openrouter (20); alternative models.dev (30)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
+  },
+  {
     "id": "c85739d8a479dde3c7761b1c",
     "entity": "offering:4736",
     "proposed_change": "max_output_tokens",
@@ -33228,6 +33423,19 @@
     "created_at": "2026-09-29T15:55:41+00:00"
   },
   {
+    "id": "eeb50e898eebf3e2bb1a3e33",
+    "entity": "offering:2",
+    "proposed_change": "cache_read_price",
+    "current_value": "0.26",
+    "proposed_value": "0.19",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://models.dev/api.json\"]",
+    "evidence": "Selected openrouter (20); alternative models.dev (30)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
+  },
+  {
     "id": "eec851cac69a206342c4668c",
     "entity": "offering:8901",
     "proposed_change": "max_output_tokens",
@@ -34942,6 +35150,19 @@
     "reason": "Invalid or unsupported structured value quarantined",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00"
+  },
+  {
+    "id": "fa30960ef4a5cbc8c2e27d4f",
+    "entity": "offering:2",
+    "proposed_change": "input_price",
+    "current_value": "1.4",
+    "proposed_value": "0.19",
+    "sources": "[\"https://openrouter.ai/api/v1/models\",\"https://models.dev/api.json\"]",
+    "evidence": "Selected openrouter (20); alternative models.dev (30)",
+    "confidence": "MEDIUM",
+    "reason": "Sources disagree; displayed value follows precedence",
+    "status": "PENDING",
+    "created_at": "2026-09-29T16:01:41+00:00"
   },
   {
     "id": "fa36b0ec12f1f59e66e8000d",
