@@ -24,6 +24,11 @@ def create_app(test_config=None):
         app.config.update(test_config)
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     init_db(app)
+    if app.config.get("APPLY_DATA_SNAPSHOT", not app.config.get("TESTING", False)):
+        from .data_snapshot import apply_snapshot
+        from .db import get_db
+        with app.app_context():
+            apply_snapshot(get_db(), Path(__file__).resolve().parent.parent / "data" / "catalog.json")
 
     @app.context_processor
     def navigation():

@@ -37,7 +37,7 @@ def route_rows(db, filters=None):
             clauses.append(f"{column} >= ?")
             params.append(int(filters[key]))
     if filters.get("free") == "1":
-        clauses.append("o.free_status IN ('FREE','PROMOTIONAL') OR input_price=0")
+        clauses.append("(input_price=0 AND output_price=0)")
     if filters.get("deal") == "1":
         clauses.append("EXISTS (SELECT 1 FROM offers x WHERE x.provider_id=p.id AND x.status='ACTIVE' AND (x.ends_at IS NULL OR x.ends_at>=date('now')))")
     if filters.get("subscription") == "1":
@@ -62,7 +62,7 @@ def route_rows(db, filters=None):
     elif access == "direct":
         clauses.append("p.name != 'OpenRouter'")
     elif access == "free":
-        clauses.append("o.free_status IN ('FREE','PROMOTIONAL') OR input_price=0")
+        clauses.append("(input_price=0 AND output_price=0)")
     sql = f"""
         SELECT o.id offering_id,o.api_model_id,o.context_limit,o.max_output_tokens,o.tool_support,
           o.structured_output_support,o.free_status,o.caveat,o.fetched_at,m.id model_id,

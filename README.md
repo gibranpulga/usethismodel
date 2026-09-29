@@ -5,8 +5,8 @@ the provider route, plan or offer, and harness that make it useful for a task.
 It treats route pricing and capabilities as route-specific facts, MCP as a
 harness capability, and benchmarks as separate objective measurements.
 
-This repository is the application foundation. The catalog, recommendations,
-data imports and offer tracking are later stages.
+The route finder uses a source-backed SQLite catalog with a deterministic daily
+maintenance pipeline. This stage maintains data; it adds no new product workflows.
 
 ## Stack
 
@@ -96,4 +96,31 @@ For this workstation, the personal `coolify` skill manages the REST API over
 SSH. Its credentials are stored outside this repository. Deployment was
 verified on 2026-09-29: Docker build, healthy container, valid HTTPS, all
 placeholder routes, static assets, both SQLite migrations, and database
-integrity passed. Catalog imports and later product stages remain unimplemented.
+integrity passed. The catalog maintenance workflow is described below.
+
+
+## Data maintenance
+
+```sh
+make data-update                  # fetch, reconcile, validate, export catalog and report
+make data-dry-run                 # same analysis on a temporary database; no writes
+make data-validate                # validate the selected SQLite database
+make test
+# Select a staging DB: make data-update DATABASE=/private/staged.sqlite3
+```
+
+The equivalent commands are `python -m app.data_update update [--dry-run]` and
+`python -m app.data_update validate`, with `--database` and `--output-dir` options.
+All legacy importer entry points now use the same safety pipeline.
+
+Models.dev, OpenRouter and LiteLLM update public structured facts; official Hermes
+documentation revisions are monitored via GitHub's structured API. No LLM or paid
+API is needed. See [source semantics](docs/update-sources.md),
+[maintenance policy](docs/data-maintenance.md), and [daily operations](docs/daily-data-update.md).
+
+`data/catalog.json` is the reviewable deployment snapshot. Startup applies a new
+snapshot once, in a validated SQLite transaction; an invalid snapshot rolls back.
+The persistent database remains in the Coolify volume. Historical reports live in
+`data/reports/` and private VPS `state/reports/`; unresolved evidence is in
+`data/pending-review.json`. Do not hand-edit generated snapshots; update the source
+observations and regenerate them.
