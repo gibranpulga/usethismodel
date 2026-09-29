@@ -81,3 +81,19 @@ service from the `main` branch, expose port `8000`, assign persistent storage
 at `/data`, and set `FLASK_SECRET_KEY` as a production secret. Attach
 `usethismodel.codefiction.net` to that service. The database must stay on the
 `/data` volume so SQLite persists across container replacements.
+
+Production is deployed at <https://usethismodel.codefiction.net>.
+The container health probe is `python /app/healthcheck.py`; it checks `/health`
+using Python's standard library. Gunicorn preloads the application so SQLite
+migrations finish before the two workers fork.
+
+The existing Coolify application UUID is `ild8duzk51xnfcuyxtyclzpg`. Its GitHub
+source expects `gibranpulga/usethismodel.git` as the repository value and uses
+the `main` branch. Persistent storage is mounted at `/data`, and
+`FLASK_SECRET_KEY` is configured as a runtime-only environment variable.
+
+For this workstation, the personal `coolify` skill manages the REST API over
+SSH. Its credentials are stored outside this repository. Deployment was
+verified on 2026-09-29: Docker build, healthy container, valid HTTPS, all
+placeholder routes, static assets, both SQLite migrations, and database
+integrity passed. Catalog imports and later product stages remain unimplemented.
