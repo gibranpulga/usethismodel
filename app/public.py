@@ -113,6 +113,8 @@ def _harness(value):
     db = get_db()
     rows = db.execute("SELECT * FROM harnesses").fetchall()
     wanted = str(value).lower()
+    # Public shorthand kept stable even when the display name is more specific.
+    wanted = {"hermes": "hermes-agent"}.get(wanted, wanted)
     return next((row for row in rows if str(row["id"]) == wanted or
                  row["name"].lower() == wanted or slugify(row["name"]) == wanted), None)
 
