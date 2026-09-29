@@ -124,10 +124,17 @@ class Runner:
             raise RuntimeError("Scheduler checkout must be on main")
         if self.git("status", "--porcelain"):
             raise RuntimeError("Scheduler checkout is dirty; refusing to discard local work")
+        loaded_commit = self.git("rev-parse", "HEAD")
         self.git("fetch", "--prune", "origin", "main")
         # Main is never committed locally; pending automation commits live in the worktree.
         self.git("merge-base", "--is-ancestor", "HEAD", "origin/main")
         self.git("merge", "--ff-only", "origin/main")
+        if self.git("rev-parse", "HEAD") != loaded_commit:
+            logging.info("Code refreshed; re-executing the updated scheduler under the same lock")
+            arguments = [self.python, str(self.repo / "scripts/daily_update.py"), "--root", str(self.root)]
+            if self.dry_run:
+                arguments.append("--dry-run")
+            os.execv(self.python, arguments)
         if self.pending.exists():
             pending = json.loads(self.pending.read_text())
             commit = pending["commit"]
