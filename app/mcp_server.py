@@ -34,7 +34,7 @@ server = MCPServer(
     SERVER_NAME,
     title="UseThisModel",
     version=SERVER_VERSION,
-    website_url="https://usethismodel.codefiction.net/mcp-info",
+    website_url="https://usethismodel.com/mcp-info",
     instructions=(
         "Read-only, source-backed AI model and provider-route catalogue. Prices and capabilities "
         "are route-specific; unknown facts remain unknown. Prefer compatibility tools for harness "

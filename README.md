@@ -39,7 +39,7 @@ For production-like website-only serving, run `gunicorn --bind 127.0.0.1:8000 ws
 
 The same application exposes the catalogue as MCP at `/mcp`. It uses the existing
 SQLite database and query/domain layer; it does not copy data or expose SQL. The
-production endpoint is `https://usethismodel.codefiction.net/mcp` and its human
+production endpoint is `https://usethismodel.com/mcp` and its human
 documentation is at `/mcp-info`.
 
 Run the combined website and Streamable HTTP server locally:
@@ -60,24 +60,24 @@ Remote client examples:
 # Hermes Agent: ~/.hermes/config.yaml
 mcp_servers:
   usethismodel:
-    url: "https://usethismodel.codefiction.net/mcp"
+    url: "https://usethismodel.com/mcp"
     trust: untrusted
 ```
 
 ```toml
 # Codex CLI: ~/.codex/config.toml
 [mcp_servers.usethismodel]
-url = "https://usethismodel.codefiction.net/mcp"
+url = "https://usethismodel.com/mcp"
 ```
 
 ```jsonc
 // OpenCode v2: opencode.jsonc
-{"mcp":{"servers":{"usethismodel":{"type":"remote","url":"https://usethismodel.codefiction.net/mcp","oauth":false}}}}
+{"mcp":{"servers":{"usethismodel":{"type":"remote","url":"https://usethismodel.com/mcp","oauth":false}}}}
 ```
 
 ```json
 // Pi: ~/.pi/agent/mcp.json or .pi/mcp.json
-{"mcpServers":{"usethismodel":{"url":"https://usethismodel.codefiction.net/mcp","exposure":"direct"}}}
+{"mcpServers":{"usethismodel":{"url":"https://usethismodel.com/mcp","exposure":"direct"}}}
 ```
 
 For stdio, replace each remote URL declaration with the client's local command
@@ -170,10 +170,10 @@ competitor, data source and benchmark review.
 The repository is ready for Coolify's Dockerfile build pack. Configure a
 service from the `main` branch, expose port `8000`, assign persistent storage
 at `/data`, and set `FLASK_SECRET_KEY` as a production secret. Attach
-`usethismodel.codefiction.net` to that service. The database must stay on the
+`usethismodel.com` to that service. The database must stay on the
 `/data` volume so SQLite persists across container replacements.
 
-Production is deployed at <https://usethismodel.codefiction.net>.
+Production is deployed at <https://usethismodel.com>.
 The container health probe is `python /app/healthcheck.py`; it checks `/health`
 using Python's standard library. Gunicorn preloads the application so SQLite
 migrations finish before the two workers fork.

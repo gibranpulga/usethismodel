@@ -57,6 +57,16 @@ def create_app(test_config=None):
     @app.before_request
     def content_security_nonce():
         g.csp_nonce = secrets.token_urlsafe(16)
+
+    @app.before_request
+    def redirect_obsolete_hosts():
+        """Keep alternate production hosts out of the public index."""
+        host = request.host.split(":", 1)[0].lower()
+        if host in {"usethismodel.codefiction.net", "www.usethismodel.com"}:
+            target = "https://usethismodel.com" + request.path
+            if request.query_string:
+                target += "?" + request.query_string.decode("ascii", "replace")
+            return redirect(target, code=308)
     if app.config.get("APPLY_DATA_SNAPSHOT", not app.config.get("TESTING", False)):
         from .data_snapshot import apply_snapshot
         from .db import get_db

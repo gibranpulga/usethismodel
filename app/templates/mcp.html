@@ -2,7 +2,7 @@
 {% block structured_data %}<link rel="stylesheet" href="{{ url_for('static', filename='mcp.css') }}">{% endblock %}
 {% block content %}
 <section class="page-intro"><div class="eyebrow">READ-ONLY AGENT ACCESS</div><h1>UseThisModel MCP</h1><p>Give Hermes, Codex, OpenCode, Pi, and other MCP clients compact, source-backed answers about exact model routes, prices, capabilities, compatibility, deals, releases, benchmarks, and plans.</p></section>
-<section class="setup-callout"><div><div class="eyebrow">REMOTE STREAMABLE HTTP</div><h2><code>https://usethismodel.codefiction.net/mcp</code></h2><p>Public catalogue data only. No API key is required.</p></div></section>
+<section class="setup-callout"><div><div class="eyebrow">REMOTE STREAMABLE HTTP</div><h2><code>https://usethismodel.com/mcp</code></h2><p>Public catalogue data only. No API key is required.</p></div></section>
 <section class="section-head"><div><div class="eyebrow">TOOLS</div><h2>Questions, not database access</h2></div></section>
 <div class="simple-grid">
   <div class="data-tile"><strong>Find</strong><span><code>search_models</code>, <code>search_provider_routes</code>, <code>find_cheapest_routes</code>, <code>find_free_models</code>, <code>find_tool_capable_models</code></span></div>
@@ -14,17 +14,17 @@
 <div class="detail-columns">
   <div><h3>Hermes Agent</h3><p>Add to <code>~/.hermes/config.yaml</code>, then run <code>/reload-mcp</code>.</p><pre><code>mcp_servers:
   usethismodel:
-    url: "https://usethismodel.codefiction.net/mcp"
+    url: "https://usethismodel.com/mcp"
     trust: untrusted
     tools:
       resources: true</code></pre></div>
   <div><h3>Codex CLI</h3><p>Use the CLI, or add the equivalent <code>[mcp_servers.usethismodel]</code> entry to <code>~/.codex/config.toml</code>.</p><pre><code>codex mcp add usethismodel \
-  --url https://usethismodel.codefiction.net/mcp</code></pre></div>
+  --url https://usethismodel.com/mcp</code></pre></div>
   <div><h3>OpenCode v2</h3><p>Add to <code>opencode.jsonc</code>. This public server does not use OAuth.</p><pre><code>{
   "mcp": { "servers": {
     "usethismodel": {
       "type": "remote",
-      "url": "https://usethismodel.codefiction.net/mcp",
+      "url": "https://usethismodel.com/mcp",
       "oauth": false
     }
   }}
@@ -32,7 +32,7 @@
   <div><h3>Pi</h3><p>Add to <code>~/.pi/agent/mcp.json</code> or project <code>.pi/mcp.json</code>, then run <code>pi mcp list</code>.</p><pre><code>{
   "mcpServers": {
     "usethismodel": {
-      "url": "https://usethismodel.codefiction.net/mcp",
+      "url": "https://usethismodel.com/mcp",
       "exposure": "direct"
     }
   }

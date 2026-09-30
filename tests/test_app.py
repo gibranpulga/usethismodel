@@ -12,7 +12,8 @@ from app.query import interpret_search, price_history, route_rows
 
 @pytest.fixture()
 def app(tmp_path):
-    return create_app({"TESTING": True, "DATABASE": str(tmp_path / "test.sqlite3")})
+    return create_app({"TESTING": True, "DATABASE": str(tmp_path / "test.sqlite3"),
+                       "PUBLIC_BASE_URL": "https://usethismodel.com"})
 
 
 @pytest.fixture()
@@ -422,26 +423,42 @@ def test_seo_discovery_and_filter_index_policy(client):
 
 
 def test_machine_discovery_endpoints_and_canonical_origin(app):
-    app.config["PUBLIC_BASE_URL"] = "https://usethismodel.codefiction.net"
+    app.config["PUBLIC_BASE_URL"] = "https://usethismodel.com"
     client = app.test_client()
     home = client.get("/", headers={"Host": "untrusted.example"})
-    assert b'<link rel="canonical" href="https://usethismodel.codefiction.net/">' in home.data
+    assert b'<link rel="canonical" href="https://usethismodel.com/">' in home.data
     robots = client.get("/robots.txt")
-    assert b"Sitemap: https://usethismodel.codefiction.net/sitemap.xml" in robots.data
+    assert b"Sitemap: https://usethismodel.com/sitemap.xml" in robots.data
     sitemap = client.get("/sitemap.xml")
-    assert b"http://usethismodel.codefiction.net" not in sitemap.data
-    assert b"https://usethismodel.codefiction.net/sitemaps/core.xml" in sitemap.data
+    assert b"http://usethismodel.com" not in sitemap.data
+    assert b"usethismodel.codefiction.net" not in sitemap.data
+    assert b"https://usethismodel.com/sitemaps/core.xml" in sitemap.data
     llms = client.get("/llms.txt")
     assert llms.status_code == 200
     assert llms.mimetype == "text/plain"
-    assert b"Public API documentation: https://usethismodel.codefiction.net/api" in llms.data
+    assert b"Public API documentation: https://usethismodel.com/api" in llms.data
     api_docs = client.get("/api")
-    assert b'<link rel=canonical href="https://usethismodel.codefiction.net/api">' in api_docs.data
+    assert b'<link rel=canonical href="https://usethismodel.com/api">' in api_docs.data
     spec = client.get("/api/v1/openapi.json").json
     assert spec["openapi"] == "3.1.0"
-    assert spec["servers"] == [{"url": "https://usethismodel.codefiction.net"}]
+    assert spec["servers"] == [{"url": "https://usethismodel.com"}]
     assert "/api/v1/models" in spec["paths"]
     assert "/api/v1/models/{slug}" in spec["paths"]
+
+
+def test_canonical_host_redirect_preserves_path_and_query(client):
+    response = client.get("/models/glm-5-3?tools=true", headers={"Host": "usethismodel.codefiction.net"})
+    assert response.status_code == 308
+    assert response.headers["Location"] == "https://usethismodel.com/models/glm-5-3?tools=true"
+
+
+@pytest.mark.parametrize("path", ["/", "/models", "/providers", "/harnesses", "/deals", "/releases", "/benchmarks", "/models/glm-5-3", "/providers/openrouter", "/harnesses/opencode", "/workflows/unreal-engine"])
+def test_representative_pages_use_canonical_origin_and_are_indexable(client, path):
+    response = client.get(path)
+    assert response.status_code == 200
+    assert b"https://usethismodel.com" in response.data
+    assert b"usethismodel.codefiction.net" not in response.data
+    assert b'<meta name="robots" content="noindex' not in response.data
 
 
 @pytest.mark.parametrize("path,needle", [
