@@ -527,6 +527,11 @@ def test_first_party_price_provenance_tiers_and_batch_classes_are_public(app, cl
     assert deals.status_code == 200
     assert b"Not published" in deals.data
 
+    openrouter = client.get("/api/v1/models/openrouter/free").json["data"]["routes"]
+    router_route = next(row for row in openrouter if row["provider"]["name"] == "OpenRouter")
+    assert router_route["pricing"]["source_label"] == "Aggregator-observed price"
+    assert {row["source_type"] for row in router_route["pricing"]["classes"]} == {"aggregator_observed"}
+
 
 def test_media_routes_keep_native_pricing_units_and_features(client):
     response = client.get("/models?q=3d")

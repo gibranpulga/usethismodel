@@ -507,6 +507,9 @@ def test_published_snapshot_is_reconciled_before_new_fetch(db, tmp_path, monkeyp
     monkeypatch.setattr('app.update_sources.fetch_harness_changes', lambda: ([], [], {}))
     monkeypatch.setattr('app.benchmark_sources.sync_publisher_results',
                         lambda *_: {"inserted": 0, "unmatched_models": {}, "failures": []})
+    monkeypatch.setattr('app.openrouter_routes.fetch_openrouter_variants', lambda: ([], [], {}))
+    monkeypatch.setattr('app.openrouter_routes.sync_openrouter_variants',
+                        lambda *_: {"imported": 0, "failures": 0})
     monkeypatch.setattr(sys, 'argv', ['data_update', 'update', '--database', database, '--base-snapshot', str(base / 'catalog.json'), '--output-dir', str(tmp_path / 'updated')])
     main()
     assert prices(db, oid)['INPUT'] == 2

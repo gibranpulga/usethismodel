@@ -112,7 +112,11 @@ def _source(row):
 def _route_json(row, compatibility=None):
     price_classes = [dict(price) for price in get_db().execute(
       """SELECT pr.price_type,pr.amount,pr.currency,pr.unit,pr.context_threshold,
-                pr.valid_from,pr.price_note,s.name source_name,s.url source_url,s.source_type
+                pr.valid_from,pr.price_note,s.name source_name,s.url source_url,
+                CASE WHEN s.id IS NULL THEN 'unknown'
+                     WHEN s.source_type IN ('official_provider','official_docs','official_metadata')
+                       AND lower(s.name) NOT LIKE '%openrouter%' THEN 'official_provider'
+                     ELSE 'aggregator_observed' END source_type
          FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id
          WHERE pr.offering_id=? AND pr.valid_until IS NULL
          ORDER BY pr.price_type,pr.context_threshold""", (row["offering_id"],))]
