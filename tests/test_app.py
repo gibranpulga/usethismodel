@@ -347,7 +347,7 @@ def test_finder_workflows_and_shared_filter_urls(client, path, required):
         ("deepseek coding", {"q": "deepseek", "use_case": "coding"}),
         ("openrouter 1m context", {"access": "openrouter", "context": "1000000"}),
         ("works with hermes", {"harness": "Hermes Agent"}),
-        ("glm cheap coding", {"q": "glm", "sort": "value", "use_case": "coding"}),
+        ("glm cheap coding", {"q": "glm", "sort": "weighted_cost", "use_case": "coding"}),
         ("open source tools", {"open_weights": "1", "tools": "1"}),
         ("image to 3d", {"type": "3D generation", "image_to_3d": "1"}),
         ("newest models this month", {"release": "month", "sort": "newest"}),
@@ -389,7 +389,7 @@ def test_offers_rankings_and_personal_setup_are_visible(client):
     assert b"OpenAI Batch API" in offers.data
     assert b"First seen" in offers.data and b"Last verified" in offers.data
     rankings = client.get("/rankings")
-    assert b"0.70" in rankings.data and b"Best-value coding" in rankings.data
+    assert b"0.70" in rankings.data and b"Lowest estimated token cost for coding routes" in rankings.data
     assert b"no hidden universal" in rankings.data
     setup = client.get("/my-setup")
     assert b"Hermes Agent" in setup.data and b"OpenCode" in setup.data
@@ -457,10 +457,10 @@ def test_subscription_included_zero_price_is_not_free(app, client):
     assert all(r["access_semantics"] != "INCLUDED_WITH_SUBSCRIPTION" for r in response.json["data"])
 
 
-def test_value_sort_uses_visible_formula(app):
+def test_weighted_cost_sort_uses_visible_formula(app):
     with app.app_context():
-        rows = [row for row in route_rows(get_db(), {"tools": "1", "sort": "value"}) if row["value_score"] is not None]
-    assert rows == sorted(rows, key=lambda row: row["value_score"])
+        rows = [row for row in route_rows(get_db(), {"tools": "1", "sort": "weighted_cost"}) if row["weighted_cost"] is not None]
+    assert rows == sorted(rows, key=lambda row: row["weighted_cost"])
 
 
 def test_public_api_contract_and_filters(client):

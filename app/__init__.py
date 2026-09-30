@@ -36,7 +36,7 @@ MORE_NAV = [("Compatibility", "/compatibility"), ("Plans", "/plans"),
             ("Rankings", "/rankings"), ("API", "/api"), ("MCP", "/mcp-info")]
 PRESETS = {
     "free-tools": ("Free + Tools", {"free": "1", "tools": "1"}), "cheap-agent": ("Cheapest Agent Models", {"tools": "1", "use_case": "agentic-coding"}),
-    "strong-coding": ("Strong Coding", {"tools": "1", "use_case": "coding"}), "best-value-coding": ("Best Value Coding", {"tools": "1", "use_case": "coding", "sort": "value"}),
+    "strong-coding": ("Strong Coding", {"tools": "1", "use_case": "coding"}), "lowest-token-cost-coding": ("Lowest Token Cost for Coding", {"tools": "1", "use_case": "coding", "sort": "weighted_cost"}),
     "million-tools": ("1M Context + Tools", {"context": "1000000", "tools": "1"}), "open-tools": ("Open Weight + Tools", {"open_weights": "1", "tools": "1"}),
     "new-week": ("New This Week", {"release": "week"}), "discounts": ("Current Discounts", {"deal": "1"}), "hermes": ("Works With Hermes", {"harness": "Hermes Agent"}),
     "opencode": ("Works With OpenCode", {"harness": "OpenCode"}), "pi": ("Works With Pi", {"harness": "Pi"}), "codex": ("Works With Codex", {"harness": "Codex CLI"}),
@@ -325,7 +325,7 @@ def create_app(test_config=None):
             "index.html", title="AI model, provider route & harness finder", filters=filters,
             interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters)[:6],
             deals=sorted(offer_rows(db()), key=offer_rank, reverse=True)[:4], latest=latest, popular=popular,
-            coding=route_rows(db(), {"tools": "1", "use_case": "coding", "sort": "value", "limit": 3}),
+            coding=route_rows(db(), {"tools": "1", "use_case": "coding", "sort": "weighted_cost", "limit": 3}),
             home_harnesses=rows("SELECT id,name,interfaces,supports_mcp FROM harnesses WHERE name IN ('Hermes Agent','Codex CLI','OpenCode','Pi') ORDER BY name"),
             media_routes=route_rows(db(), {"type": "3D generation", "limit": 3}), changes=changes[:3],
             structured_data={
@@ -397,7 +397,13 @@ def create_app(test_config=None):
         all_offerings = route_rows(db(), {"model_id": model_id, "limit": 250})
         offerings = all_offerings[:12]
         use_cases = rows("SELECT u.name,u.slug,mus.classification,mus.rationale,mus.confidence FROM model_use_case_scores mus JOIN use_cases u ON u.id=mus.use_case_id WHERE mus.model_id=? ORDER BY u.name", (model_id,))
-        benchmarks = rows("SELECT b.name,b.version,br.score,br.metric,br.confidence FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id WHERE br.model_id=? ORDER BY b.name", (model_id,))
+        benchmarks = rows("""SELECT b.id benchmark_id,b.name,b.version,b.is_current,b.published_at,
+          b.last_verified_at benchmark_verified_at,br.score,br.metric,br.task_subset,br.confidence,
+          br.model_version,br.harness_name,br.harness_version,br.scaffold,br.reasoning_setting,
+          br.tool_policy,br.network_policy,br.evaluated_at,br.confidence_interval,
+          s.name source_name,s.url source_url FROM benchmark_results br
+          JOIN benchmarks b ON b.id=br.benchmark_id LEFT JOIN sources s ON s.id=br.source_id
+          WHERE br.model_id=? ORDER BY b.name,b.version,br.metric,br.task_subset,br.evaluated_at DESC""", (model_id,))
         harnesses = []
         for harness in rows("SELECT id,name FROM harnesses ORDER BY name"):
             supported = [compatibility_for(db(), harness["id"], o["offering_id"]) for o in all_offerings]
@@ -537,10 +543,11 @@ def create_app(test_config=None):
             JOIN workflow_integrations wi ON wi.id=whc.integration_id WHERE wi.workflow_id=?)
           ORDER BY o.free_status='FREE' DESC,COALESCE(input_price,999999),m.canonical_name""", (workflow["id"],))
         benchmarks = rows("""SELECT b.name,b.version,b.category,br.score,br.metric,m.canonical_name,
-          s.url source_url FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id
+          br.task_subset,br.harness_name,br.scaffold,br.reasoning_setting,br.evaluated_at,
+          br.confidence,s.url source_url FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id
           JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
-          WHERE b.category IN ('coding','agentic coding','software engineering')
-          ORDER BY b.is_current DESC,br.score DESC LIMIT 20""")
+          WHERE lower(b.category) LIKE '%cod%' AND b.is_current=1
+          ORDER BY b.name,b.version,br.metric,br.task_subset,br.harness_name,br.scaffold,br.evaluated_at DESC LIMIT 100""")
         schema = {"@context": "https://schema.org", "@type": "Dataset", "name": f"{workflow['name']} compatibility routes", "description": workflow["description"], "url": absolute_url(request.path), "dateModified": workflow["verified_at"]}
         return render_template("workflow_detail.html", title=f"{workflow['name']} compatibility", workflow=workflow,
           integrations=integrations, hosts=hosts, route_matches=route_matches, benchmarks=benchmarks,
@@ -570,8 +577,21 @@ def create_app(test_config=None):
             if route:
                 selected.append(route)
         histories = {r["offering_id"]: price_history(db(), r["offering_id"]) for r in selected}
+        from .benchmark_queries import comparable_groups
+        model_ids = sorted({route["model_id"] for route in selected})
+        marks = ",".join("?" for _ in model_ids) or "NULL"
+        evidence = rows(f"""SELECT b.id benchmark_id,b.name benchmark,b.version,b.is_current,
+          br.model_id,m.canonical_name model,br.score,br.metric,br.task_subset,br.harness_name,
+          br.harness_version,br.scaffold,br.reasoning_setting,br.tool_policy,br.network_policy,
+          br.step_budget,br.token_budget,br.time_budget_seconds,br.attempts_per_task,br.grader_version,
+          br.evaluated_at,br.confidence,br.confidence_interval,s.url source_url
+          FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id
+          JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
+          WHERE br.model_id IN ({marks}) AND b.is_current=1""", model_ids)
+        benchmark_groups = comparable_groups(evidence)
         return render_template("compare.html", title="Compare routes", routes=selected,
-                               all_routes=all_routes, histories=histories, compare_query=compare_query)
+                               all_routes=all_routes, histories=histories, compare_query=compare_query,
+                               benchmark_groups=benchmark_groups)
 
     @app.get("/plans")
     def plans():
@@ -707,7 +727,7 @@ def create_app(test_config=None):
         selected_workflows = request.args.getlist("workflows")
         setup_routes = []
         if selected_harnesses or selected_workflows:
-            base_filters = {"tools": "1", "sort": "value", "limit": 500}
+            base_filters = {"tools": "1", "sort": "weighted_cost", "limit": 500}
             if "coding" in selected_workflows:
                 base_filters["use_case"] = "coding"
             candidates = route_rows(db(), base_filters)
@@ -787,7 +807,15 @@ def create_app(test_config=None):
 
     @app.get("/benchmarks")
     def benchmarks():
-        return render_template("benchmarks.html", title="Benchmarks", benchmarks=rows("SELECT b.*,COUNT(br.id) result_count FROM benchmarks b LEFT JOIN benchmark_results br ON br.benchmark_id=b.id GROUP BY b.id ORDER BY b.is_current DESC,b.name,b.version DESC"), results=rows("SELECT b.name benchmark,b.version,m.canonical_name,br.score,br.metric,br.confidence,br.harness_name,br.scaffold,br.reasoning_setting FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id JOIN models m ON m.id=br.model_id WHERE b.is_current=1 AND br.confidence IN ('HIGH','MEDIUM') ORDER BY b.name,b.version,br.metric,br.score DESC"))
+        return render_template("benchmarks.html", title="Benchmarks", benchmarks=rows("SELECT b.*,COUNT(br.id) result_count FROM benchmarks b LEFT JOIN benchmark_results br ON br.benchmark_id=b.id GROUP BY b.id ORDER BY b.is_current DESC,b.name,b.version DESC"), results=rows("""SELECT b.name benchmark,b.version,m.canonical_name,m.canonical_slug,
+          br.score,br.metric,br.task_subset,br.confidence,br.harness_name,br.harness_version,
+          br.scaffold,br.reasoning_setting,br.evaluated_at,s.url source_url
+          FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id
+          JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
+          WHERE b.is_current=1 AND br.confidence IN ('HIGH','MEDIUM')
+          ORDER BY b.name,b.version,br.metric,br.task_subset,br.harness_name,br.harness_version,
+            br.scaffold,br.reasoning_setting,br.tool_policy,br.network_policy,br.attempts_per_task,
+            br.grader_version,br.score DESC"""))
 
     @app.get("/use-cases")
     def use_cases():
@@ -800,9 +828,12 @@ def create_app(test_config=None):
             abort(404)
         results = rows("""SELECT m.canonical_name,m.canonical_slug,br.*,s.name source_name,s.url source_url
           FROM benchmark_results br JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
-          WHERE br.benchmark_id=? ORDER BY br.score DESC""", (benchmark["id"],))
+          WHERE br.benchmark_id=? ORDER BY br.metric,br.task_subset,br.harness_name,br.harness_version,
+            br.scaffold,br.reasoning_setting,br.tool_policy,br.network_policy,br.attempts_per_task,
+            br.grader_version,br.score DESC""", (benchmark["id"],))
         source = db().execute("SELECT * FROM sources WHERE id=?", (benchmark["source_id"],)).fetchone() if benchmark["source_id"] else None
-        return render_template("benchmark_detail.html", title=f"{benchmark['name']} {benchmark['version']} benchmark", benchmark=benchmark, results=results, source=source, canonical_url=absolute_url(request.path), meta_description=f"{benchmark['name']} {benchmark['version']} methodology, metric-specific results, harness details, sources, and caveats.")
+        versions = rows("SELECT name,version,is_current,published_at FROM benchmarks WHERE name=? ORDER BY published_at DESC,version DESC", (benchmark["name"],))
+        return render_template("benchmark_detail.html", title=f"{benchmark['name']} {benchmark['version']} benchmark", benchmark=benchmark, results=results, source=source, versions=versions, canonical_url=absolute_url(request.path), meta_description=f"{benchmark['name']} {benchmark['version']} methodology, metric-specific results, harness details, sources, and caveats.")
 
     @app.get("/internal/data-quality")
     def internal_data_quality():
@@ -842,10 +873,11 @@ def create_app(test_config=None):
         matching_routes = route_rows(db(), {**route_filter, "limit": 12})
         model_ids = [row["model_id"] for row in matching_routes]
         marks = ",".join("?" for _ in model_ids) or "NULL"
-        relevant_benchmarks = rows(f"""SELECT b.name,b.version,br.score,br.metric,m.canonical_name,m.canonical_slug,s.url source_url
+        relevant_benchmarks = rows(f"""SELECT b.name,b.version,br.score,br.metric,m.canonical_name,m.canonical_slug,
+          br.task_subset,br.harness_name,br.scaffold,br.reasoning_setting,br.evaluated_at,br.confidence,s.url source_url
           FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id JOIN models m ON m.id=br.model_id
-          LEFT JOIN sources s ON s.id=br.source_id WHERE br.model_id IN ({marks})
-          ORDER BY b.is_current DESC,br.confidence='HIGH' DESC,br.score DESC LIMIT 12""", model_ids)
+          LEFT JOIN sources s ON s.id=br.source_id WHERE br.model_id IN ({marks}) AND b.is_current=1
+          ORDER BY b.name,b.version,br.metric,br.task_subset,br.harness_name,br.scaffold,br.evaluated_at DESC LIMIT 100""", model_ids)
         deal_rows = [offer for offer in offer_rows(db()) if offer.get("offering_id") in {route["offering_id"] for route in matching_routes}][:6]
         verified = max([row["fetched_at"] for row in scores if row["fetched_at"]] + [row["fetched_at"] for row in matching_routes if row["fetched_at"]], default=None)
         canonical_path = "3d-generation" if data_slug == "3d" else use_case_slug

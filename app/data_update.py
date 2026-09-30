@@ -15,7 +15,7 @@ from .data_snapshot import encode, snapshot_text
 
 PRICES = {'input_price': 'INPUT', 'output_price': 'OUTPUT', 'cache_read_price': 'CACHE_READ', 'cache_write_price': 'CACHE_WRITE'}
 COLUMNS = {'context_window': 'context_limit', 'max_output_tokens': 'max_output_tokens', 'tool_calling': 'tool_support', 'structured_output': 'structured_output_support'}
-CATEGORIES = ['New models', 'New provider offerings', 'Price increases', 'Price reductions', 'New free routes', 'Expired free routes', 'New offers', 'Expired offers', 'Harness changes', 'Source failures', 'Conflicts', 'Manual-review items']
+CATEGORIES = ['New models', 'New provider offerings', 'Price increases', 'Price reductions', 'New free routes', 'Expired free routes', 'New offers', 'Expired offers', 'Harness changes', 'Benchmark results imported', 'Source failures', 'Conflicts', 'Manual-review items']
 
 
 def priority(source, field):
@@ -536,6 +536,20 @@ def main():
                     report['Source failures'].append({'source': 'official-documentation-monitor', 'failures': doc_monitor['failures']})
                 from .benchmark_sources import sync_benchmark_registry
                 sync_benchmark_registry(db, now)
+                from .benchmark_sources import sync_publisher_results
+                benchmark_import = (sync_publisher_results(db, now) if not app.testing else
+                                    {"inserted": 0, "skipped_in_tests": True,
+                                     "unmatched_models": {}, "failures": []})
+                if benchmark_import.get('inserted'):
+                    report['Benchmark results imported'].append(benchmark_import)
+                if benchmark_import.get('failures'):
+                    report['Source failures'].extend(benchmark_import['failures'])
+                if benchmark_import.get('unmatched_models'):
+                    unresolved_imports = {name: values for name, values in benchmark_import['unmatched_models'].items() if values}
+                    if unresolved_imports:
+                        report['Manual-review items'].append({
+                            'benchmark_model_ids_not_imported': unresolved_imports,
+                            'reason': 'No unique exact canonical model match; scores were not assigned.'})
                 # Exercise endpoint ingestion against the staging/dry-run DB too.
                 # A dry run never writes the original database or output artifacts.
                 from .openrouter_routes import fetch_openrouter_variants, sync_openrouter_variants
@@ -543,6 +557,7 @@ def main():
                 route_result = sync_openrouter_variants(db, variants, route_failures, route_manifest, now)
                 report['operational_checks'] = {
                     'documentation_monitor': doc_monitor,
+                    'publisher_benchmarks': benchmark_import,
                     'openrouter_endpoint_variants': {
                         'fetched': route_manifest.get('count', len(variants)),
                         'imported': route_result.get('imported', 0),

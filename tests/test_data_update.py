@@ -476,6 +476,8 @@ def test_published_snapshot_is_reconciled_before_new_fetch(db, tmp_path, monkeyp
     database = db.execute('PRAGMA database_list').fetchone()[2]
     monkeypatch.setattr('app.update_sources.fetch_sources', lambda: ([record(fields={})], [], {}))
     monkeypatch.setattr('app.update_sources.fetch_harness_changes', lambda: ([], [], {}))
+    monkeypatch.setattr('app.benchmark_sources.sync_publisher_results',
+                        lambda *_: {"inserted": 0, "unmatched_models": {}, "failures": []})
     monkeypatch.setattr(sys, 'argv', ['data_update', 'update', '--database', database, '--base-snapshot', str(base / 'catalog.json'), '--output-dir', str(tmp_path / 'updated')])
     main()
     assert prices(db, oid)['INPUT'] == 2

@@ -134,9 +134,9 @@ def interpret_search(filters):
     elif re.search(r"\bcoding\b", text):
         set_if_empty("use_case", "coding", "Use case: coding")
         text = re.sub(r"\bcoding\b", " ", text)
-    if re.search(r"\bcheap(?:est)?\b|best value", text):
-        set_if_empty("sort", "value", "Sort: best value")
-        text = re.sub(r"\bcheap(?:est)?\b|best value", " ", text)
+    if re.search(r"\bcheap(?:est)?\b|weighted token cost|best value", text):
+        set_if_empty("sort", "weighted_cost", "Sort: weighted token cost")
+        text = re.sub(r"\bcheap(?:est)?\b|weighted token cost|best value", " ", text)
     if re.search(r"\b(?:newest|new)\s+(?:models?\s+)?this\s+month\b", text):
         set_if_empty("release", "month", "Release: this month")
         set_if_empty("sort", "newest", "Sort: newest")
@@ -328,18 +328,20 @@ def route_rows(db, filters=None):
           CASE WHEN ?='featured' THEN CASE WHEN m.released_at IS NULL THEN 1 ELSE 0 END ELSE 0 END,
           CASE WHEN ?='featured' THEN m.released_at END DESC,
           CASE WHEN ?='featured' THEN CASE WHEN active_deal THEN 0 ELSE 1 END ELSE 0 END,
-          CASE WHEN ?='value' THEN CASE WHEN input_price IS NULL OR output_price IS NULL THEN 1 ELSE 0 END ELSE 0 END,
-          CASE WHEN ?='value' THEN (0.7*input_price + 0.3*output_price) END,
+          CASE WHEN ?='weighted_cost' THEN CASE WHEN input_price IS NULL OR output_price IS NULL THEN 1 ELSE 0 END ELSE 0 END,
+          CASE WHEN ?='weighted_cost' THEN (0.7*input_price + 0.3*output_price) END,
           CASE WHEN ?='newest' THEN m.released_at END DESC,
           media_price IS NULL, input_price IS NULL, COALESCE(media_price,input_price), output_price, m.canonical_name, p.name
         LIMIT ? OFFSET ?
     """
     sort = filters.get("sort", "price")
+    if sort == "value":  # Backward compatibility for existing saved searches.
+        sort = "weighted_cost"
     result = [dict(row) for row in db.execute(
         sql, [*params, sort, sort, sort, sort, sort, sort, sort, sort, limit, offset]
     ).fetchall()]
     for row in result:
-        row["value_score"] = (
+        row["weighted_cost"] = (
             0.7 * row["input_price"] + 0.3 * row["output_price"]
             if row["input_price"] is not None and row["output_price"] is not None
             else None
@@ -512,22 +514,34 @@ def pricing_differences(db):
 
 def ranking_groups(db):
     """Factual lists with an explicit metric; never a universal model score."""
+    from .benchmark_queries import comparable_groups
+
     routes = route_rows(db, {"limit": 250})
-    benchmark = [dict(r) for r in db.execute("""
-      SELECT b.name,b.version,b.category,br.metric,br.score,br.confidence,m.id model_id,
+    benchmark_rows = [dict(r) for r in db.execute("""
+      SELECT b.name,b.version,b.category,br.metric,br.task_subset,br.harness_name,br.scaffold,
+        br.reasoning_setting,br.tool_policy,br.network_policy,br.score,br.confidence,m.id model_id,
         m.canonical_name,s.name source_name,s.url source_url
       FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id
       JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
       WHERE br.confidence IN ('HIGH','MEDIUM') AND b.is_current=1
-      ORDER BY br.score DESC LIMIT 12
+      ORDER BY b.name,b.version,br.metric,br.task_subset,br.harness_name,br.scaffold,
+        br.reasoning_setting,br.tool_policy,br.network_policy,br.score DESC
     """).fetchall()]
-    coding = [r for r in benchmark if "cod" in (r["category"] or "").lower()]
-    value = [r for r in route_rows(db, {"tools": "1", "use_case": "coding", "sort": "value", "limit": 8}) if r["value_score"] is not None]
+    benchmark_groups = []
+    for group in comparable_groups(benchmark_rows):
+        name, version, metric = group["benchmark"], group["version"], group["metric"]
+        config = ", ".join(str(value) for value in group["configuration"].values())
+        benchmark_groups.append({
+            "title": f"{name} {version}" + (f" · {config}" if config else ""),
+            "metric": f"{metric}; same benchmark version and recorded configuration only.",
+            "kind": "benchmark", "rows": sorted(group["results"], key=lambda row: row["score"], reverse=True)[:8],
+        })
+    benchmark_groups = benchmark_groups[:16]
+    weighted_cost = [r for r in route_rows(db, {"tools": "1", "use_case": "coding", "sort": "weighted_cost", "limit": 8}) if r["weighted_cost"] is not None]
     cheapest = [r for r in route_rows(db, {"tools": "1", "limit": 8}) if r["input_price"] is not None]
     return [
-        {"title": "Strong general models", "metric": "Recorded benchmark score (descending); benchmark versions are shown.", "kind": "benchmark", "rows": benchmark[:8]},
-        {"title": "Strong coding models", "metric": "Recorded coding or agent benchmark score (descending).", "kind": "benchmark", "rows": coding[:8]},
-        {"title": "Best-value coding", "metric": "0.70 × input $/M + 0.30 × output $/M, among recorded coding routes with tools.", "kind": "route", "rows": value},
+        *benchmark_groups,
+        {"title": "Lowest estimated token cost for coding routes", "metric": "Weighted token cost: 0.70 × input $/M + 0.30 × output $/M among routes with tools. This is a cost estimate, not quality.", "kind": "route", "rows": weighted_cost},
         {"title": "Cheapest tool-capable routes", "metric": "Current input $/M, then output $/M; no quality score.", "kind": "route", "rows": cheapest},
         {"title": "Free models with tools", "metric": "Exact routes with current input and output prices both recorded as $0 and tool calling=YES.", "kind": "route", "rows": route_rows(db, {"free": "1", "tools": "1", "limit": 8})},
         {"title": "Long-context + tools", "metric": "Documented context window descending, with tool calling=YES.", "kind": "route", "rows": sorted([r for r in routes if r["tool_support"] == "YES"], key=lambda r: r["context_limit"] or 0, reverse=True)[:8]},

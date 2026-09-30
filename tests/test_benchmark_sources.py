@@ -43,7 +43,7 @@ def test_sync_registers_only_publisher_metadata(db):
     assert {(row["name"], row["version"]) for row in rows} == {
         (entry.name, entry.version) for entry in BENCHMARK_REGISTRY
     }
-    assert all(row["last_verified_at"] == NOW for row in rows)
+    assert all(row["last_verified_at"] is None for row in rows)
     assert all(row["methodology_url"].startswith("https://") for row in rows)
     assert all(row["url"].startswith("https://") for row in rows)
     assert all(row["source_type"] == "benchmark_publisher" for row in rows)
@@ -85,7 +85,7 @@ def test_sync_is_repeatable_and_preserves_superseded_versions(db):
     }
     current = versions[-1]
     assert current["is_current"] == 1
-    assert current["last_verified_at"] == LATER
+    assert current["last_verified_at"] is None
     assert db.execute(
         "SELECT COUNT(*) FROM benchmarks WHERE name='Terminal-Bench' AND version='4.0.0'"
     ).fetchone()[0] == 1

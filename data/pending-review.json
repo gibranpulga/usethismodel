@@ -3872,6 +3872,22 @@
     "triage_class": null
   },
   {
+    "id": "1d7f6c6fbe6ea368d1d288c3",
+    "entity": "benchmark_source:SWE-bench",
+    "proposed_change": "review_publisher_data",
+    "current_value": null,
+    "proposed_value": null,
+    "sources": "[\"SWE-bench\"]",
+    "evidence": "{\"evidence\": [\"Claude 4.5 Opus (high)\", \"Gemini 3 Flash (high)\", \"MiniMax M2.5 (high)\", \"Claude 4.6 Opus\", \"GLM 5 (high)\", \"GPT 5.2 Codex\", \"Claude 4.5 Sonnet (high)\", \"Kimi K2.5 (high)\", \"DeepSeek V3.2 (high)\", \"Claude 4.5 Haiku (high)\"], \"reason\": \"Some publisher model IDs do not resolve uniquely; their scores were not imported.\", \"source\": \"SWE-bench\"}",
+    "confidence": "LOW",
+    "reason": "Some publisher model IDs do not resolve uniquely; their scores were not imported.",
+    "status": "PENDING",
+    "created_at": "2026-09-30T12:00:00+00:00",
+    "resolved_at": null,
+    "resolution_note": null,
+    "triage_class": null
+  },
+  {
     "id": "1d851c0ad536fb5c4324b90d",
     "entity": "model:1926",
     "proposed_change": "release_date",
@@ -8555,6 +8571,22 @@
     "reason": "Sources disagree; displayed value follows precedence",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00",
+    "resolved_at": null,
+    "resolution_note": null,
+    "triage_class": null
+  },
+  {
+    "id": "3f42c38c1ca3e570bbc41744",
+    "entity": "benchmark_source:LiveBench",
+    "proposed_change": "review_publisher_data",
+    "current_value": null,
+    "proposed_value": null,
+    "sources": "[\"LiveBench\"]",
+    "evidence": "{\"evidence\": [\"claude-opus-4-5-20251101-thinking-64k-high-effort\", \"claude-opus-4-6-thinking-auto-high-effort\", \"claude-opus-4-7-xhigh-effort\", \"claude-sonnet-4-6-thinking-auto-medium-effort\", \"claude-sonnet-5-xhigh-effort\", \"deepseek-v4-flash\", \"deepseek-v4-pro\", \"gemini-3.1-pro-preview-high\", \"gemini-3.5-flash-high\", \"glm-5.2\", \"gpt-5.2-2025-12-11-high\", \"gpt-5.2-codex\", \"gpt-5.4-mini-xhigh\", \"gpt-5.4-nano-xhigh\", \"gpt-5.4-xhigh\", \"gpt-5.5-xhigh\", \"grok-4.3\", \"grok-build-0.1\", \"kimi-k2.6-thinking\", \"minimax-m3\", \"qwen3.6-27b\", \"qwen3.6-plus\", \"qwen3.7-max\", \"gpt-5.6-sol-max\", \"gpt-5.6-terra-max\", \"gpt-5.6-luna-max\", \"claude-fable-5-max-effort\", \"muse-spark-1.1-xhigh\", \"kimi-k3\", \"inkling-xhigh\", \"gemini-3.5-flash-lite-high\", \"gemini-3.6-flash-high\", \"claude-opus-5-max-effort\", \"claude-opus-4-8-max-effort\", \"deepseek-v4-flash-0731\", \"qwen3.8-max\", \"muse-spark-1.2-xhigh\", \"smaug-agentic\", \"smaug-mini\", \"deepseek-v4-pro-0813\", \"gemini-3.7-flash-high\", \"qwen3.8-27b\", \"ox-alpha-max\", \"deepseek-v4-flash-vision-exp\", \"claude-fable-5-1-max-effort\", \"gemini-3.8-flash-high\", \"muse-spark-1.3-xhigh\", \"gpt-6-astra-max\", \"smaug-flash\", \"deepseek-v4.1-flash-max\", \"grok-4.7-xhigh\", \"claude-opus-5-5-max-effort\", \"claude-opus-5-5-xhigh-effort\", \"gpt-6-sol-max\", \"gpt-6-luna-max\", \"claude-sonnet-5-5-max-effort\", \"claude-sonnet-5-5-xhigh-effort\", \"gpt-6.1-sol-max\", \"gpt-6.1-sol-xhigh\"], \"reason\": \"Some publisher model IDs do not resolve uniquely; their scores were not imported.\", \"source\": \"LiveBench\"}",
+    "confidence": "LOW",
+    "reason": "Some publisher model IDs do not resolve uniquely; their scores were not imported.",
+    "status": "PENDING",
+    "created_at": "2026-09-30T12:00:00+00:00",
     "resolved_at": null,
     "resolution_note": null,
     "triage_class": null
@@ -23915,6 +23947,22 @@
     "reason": "Conflicting values within one source; retained previous value",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00",
+    "resolved_at": null,
+    "resolution_note": null,
+    "triage_class": null
+  },
+  {
+    "id": "b9845858ea8c1555bc9bbe56",
+    "entity": "benchmark_source:Terminal-Bench",
+    "proposed_change": "review_publisher_data",
+    "current_value": null,
+    "proposed_value": null,
+    "sources": "[\"Terminal-Bench\"]",
+    "evidence": "{\"evidence\": [\"anthropic/glm-5.3\"], \"reason\": \"Some publisher model IDs do not resolve uniquely; their scores were not imported.\", \"source\": \"Terminal-Bench\"}",
+    "confidence": "LOW",
+    "reason": "Some publisher model IDs do not resolve uniquely; their scores were not imported.",
+    "status": "PENDING",
+    "created_at": "2026-09-30T12:00:00+00:00",
     "resolved_at": null,
     "resolution_note": null,
     "triage_class": null

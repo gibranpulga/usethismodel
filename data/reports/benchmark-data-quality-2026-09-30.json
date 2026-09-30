@@ -1,0 +1,221 @@
+{
+  "after": {
+    "benchmark_result_rows": 179,
+    "canonical_models_with_current_benchmarks": 20,
+    "coding_models_with_current_benchmark_coverage": 20,
+    "confidence": {
+      "HIGH": 12,
+      "MEDIUM": 164
+    },
+    "current_version_result_rows": 176
+  },
+  "before": {
+    "benchmark_result_rows": 3,
+    "canonical_models_with_current_benchmarks": 0,
+    "coding_models_with_current_benchmark_coverage": 0,
+    "confidence": {
+      "LOW": 3
+    },
+    "current_version_result_rows": 0
+  },
+  "catalog": {
+    "canonical_models": 3306,
+    "provider_routes": 9329
+  },
+  "comparison": {
+    "groups": [
+      {
+        "harness_name": "Claude Code",
+        "metric": "accuracy (%)",
+        "model_count": 5,
+        "name": "Terminal-Bench",
+        "network_policy": null,
+        "reasoning_setting": "max",
+        "scaffold": "claude-code",
+        "task_subset": "terminal-bench/terminal-bench@v4.0.0",
+        "tool_policy": null,
+        "version": "4.0.0"
+      },
+      {
+        "harness_name": "Codex",
+        "metric": "accuracy (%)",
+        "model_count": 3,
+        "name": "Terminal-Bench",
+        "network_policy": null,
+        "reasoning_setting": "max",
+        "scaffold": "codex",
+        "task_subset": "terminal-bench/terminal-bench@v4.0.0",
+        "tool_policy": null,
+        "version": "4.0.0"
+      },
+      {
+        "harness_name": "Grok Build",
+        "metric": "accuracy (%)",
+        "model_count": 2,
+        "name": "Terminal-Bench",
+        "network_policy": null,
+        "reasoning_setting": "none",
+        "scaffold": "grok-build",
+        "task_subset": "terminal-bench/terminal-bench@v4.0.0",
+        "tool_policy": null,
+        "version": "4.0.0"
+      },
+      {
+        "harness_name": "mini-SWE-agent",
+        "metric": "accuracy (%)",
+        "model_count": 2,
+        "name": "Terminal-Bench",
+        "network_policy": null,
+        "reasoning_setting": "high",
+        "scaffold": "mini-swe-agent",
+        "task_subset": "terminal-bench/terminal-bench@v4.0.0",
+        "tool_policy": null,
+        "version": "4.0.0"
+      },
+      {
+        "harness_name": "mini-SWE-agent",
+        "metric": "resolved (%)",
+        "model_count": 2,
+        "name": "SWE-bench Verified",
+        "network_policy": null,
+        "reasoning_setting": "high",
+        "scaffold": "mini-SWE-agent",
+        "task_subset": "Verified (500 tasks)",
+        "tool_policy": null,
+        "version": "500-task subset"
+      }
+    ],
+    "like_for_like_groups_with_two_or_more_models": 5
+  },
+  "current_datasets": [
+    {
+      "canonical_models": 0,
+      "category": "Coding agent",
+      "is_current": 1,
+      "last_verified_at": "2026-09-29T21:29:13+00:00",
+      "name": "Artificial Analysis Coding Agent Index",
+      "published_at": "2026-09",
+      "result_rows": 0,
+      "version": "1.5"
+    },
+    {
+      "canonical_models": 0,
+      "category": "General/Reasoning/Coding/Agents",
+      "is_current": 1,
+      "last_verified_at": "2026-09-29T21:29:13+00:00",
+      "name": "Artificial Analysis Intelligence Index",
+      "published_at": "2026-09-07",
+      "result_rows": 0,
+      "version": "4.3.2"
+    },
+    {
+      "canonical_models": 7,
+      "category": "General/Reasoning/Coding/Agents",
+      "is_current": 1,
+      "last_verified_at": "2026-09-30T16:48:16+00:00",
+      "name": "LiveBench",
+      "published_at": "2026-06-25",
+      "result_rows": 161,
+      "version": "2026-06-25"
+    },
+    {
+      "canonical_models": 0,
+      "category": "Coding agent",
+      "is_current": 1,
+      "last_verified_at": "2026-09-29T21:29:13+00:00",
+      "name": "SWE-bench Pro",
+      "published_at": "2026-09-22",
+      "result_rows": 0,
+      "version": "V2"
+    },
+    {
+      "canonical_models": 3,
+      "category": "Coding agent",
+      "is_current": 1,
+      "last_verified_at": "2026-09-30T16:48:16+00:00",
+      "name": "SWE-bench Verified",
+      "published_at": "2024-08-13",
+      "result_rows": 3,
+      "version": "500-task subset"
+    },
+    {
+      "canonical_models": 12,
+      "category": "Agentic terminal use",
+      "is_current": 1,
+      "last_verified_at": "2026-09-30T16:48:16+00:00",
+      "name": "Terminal-Bench",
+      "published_at": "2026-08-26",
+      "result_rows": 12,
+      "version": "4.0.0"
+    }
+  ],
+  "generated_at": "2026-09-30T16:48:16+00:00",
+  "imports": {
+    "automated_publisher_rows": 176,
+    "curated_rows": 0,
+    "new_rows_this_refresh": 0,
+    "source_refresh_failures": [],
+    "unmatched_publisher_model_ids": {
+      "LiveBench": 59,
+      "SWE-bench": 10,
+      "Terminal-Bench": 1
+    }
+  },
+  "sources": [
+    {
+      "name": "LiveBench",
+      "notes": "Per-task publisher CSV; confidence MEDIUM because run-level harness/configuration fields are not published in this export.",
+      "rows": 161,
+      "url": "https://raw.githubusercontent.com/LiveBench/new-livebench/main/public/table_2026_06_25.csv",
+      "version": "2026-06-25"
+    },
+    {
+      "name": "Terminal-Bench",
+      "notes": "Official submission JSON; exact model, agent/scaffold, agent version, reasoning effort, attempts and 95% interval when published.",
+      "rows": 12,
+      "url": "https://github.com/harbor-framework/terminal-bench/tree/main/leaderboard/submissions",
+      "version": "4.0.0"
+    },
+    {
+      "name": "SWE-bench Verified",
+      "notes": "Official machine-readable leaderboard; 2026 evaluations only, exact model tags required; confidence MEDIUM unless checked is explicitly true.",
+      "rows": 3,
+      "url": "https://raw.githubusercontent.com/swe-bench/swe-bench.github.io/master/data/leaderboards.json",
+      "version": "500-task subset"
+    },
+    {
+      "name": "Artificial Analysis Intelligence Index",
+      "notes": "Documented API returned HTTP 401 without a data API credential; no web-page scraping performed.",
+      "rows": 0,
+      "url": "https://artificialanalysis.ai/data-api",
+      "version": "4.3.2"
+    },
+    {
+      "name": "Artificial Analysis Coding Agent Index",
+      "notes": "Documented API returned HTTP 401 without a data API credential; no web-page scraping performed.",
+      "rows": 0,
+      "url": "https://artificialanalysis.ai/data-api",
+      "version": "1.5"
+    },
+    {
+      "name": "SWE-bench Pro",
+      "notes": "No stable structured result export was integrated in this pass.",
+      "rows": 0,
+      "url": "https://labs.scale.com/leaderboard/swe_bench_pro_public_v2",
+      "version": "V2"
+    }
+  ],
+  "unresolved_policy": "No score is imported unless an exact route ID or unique exact canonical slug/alias resolves to one catalog model. Missing run configuration is not treated as proof of comparability.",
+  "validation": {
+    "current_price_uniqueness": "ok",
+    "foreign_keys": "ok",
+    "free_routes": "ok",
+    "integrity": "ok",
+    "limits": "ok",
+    "model_identity": "ok",
+    "offer_verification": "ok",
+    "openrouter_route_variants": "ok",
+    "prices": "ok",
+    "release_dates": "ok"
+  }
+}

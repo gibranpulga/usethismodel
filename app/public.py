@@ -495,19 +495,74 @@ def api_releases():
 
 @public.get("/api/v1/benchmarks")
 def api_benchmarks():
+    from .benchmark_queries import comparable_groups
+
+    db = get_db()
+    clauses, params = [], []
+    benchmark_name = request.args.get("benchmark")
+    version = request.args.get("version")
+    model = request.args.get("model")
+    current_only = request.args.get("current_only", "false").casefold() in {"1", "true", "yes"}
+    if benchmark_name:
+        clauses.append("b.name=?")
+        params.append(benchmark_name)
+    if version:
+        clauses.append("b.version=?")
+        params.append(version)
+    if current_only:
+        clauses.append("b.is_current=1")
+    model_ids = []
+    for value in [model] if model else []:
+        found = db.execute("SELECT id FROM models WHERE canonical_slug=? OR lower(canonical_name)=lower(?)", (value, value)).fetchone()
+        if not found:
+            return jsonify({"error": {"code": "unknown_model", "message": f"Unknown canonical model: {value}"}}), 400
+        model_ids.append(found[0])
+    compare_values = [part.strip() for part in request.args.get("compare", "").split(",") if part.strip()]
+    for value in compare_values:
+        found = db.execute("SELECT id FROM models WHERE canonical_slug=? OR lower(canonical_name)=lower(?)", (value, value)).fetchone()
+        if not found:
+            return jsonify({"error": {"code": "unknown_model", "message": f"Unknown canonical model: {value}"}}), 400
+        model_ids.append(found[0])
+    model_ids = list(dict.fromkeys(model_ids))
+    if compare_values and len(model_ids) < 2:
+        return jsonify({"error": {"code": "comparison_requires_two_models", "message": "Pass at least two distinct model slugs in compare."}}), 400
     data = []
-    for row in get_db().execute("SELECT b.*,s.name source_name,s.url source_url FROM benchmarks b LEFT JOIN sources s ON s.id=b.source_id ORDER BY b.name,b.version"):
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    for row in db.execute(f"SELECT b.*,s.name source_name,s.url source_url FROM benchmarks b LEFT JOIN sources s ON s.id=b.source_id {where} ORDER BY b.name,b.version", params):
         item = dict(row)
         item["slug"] = slugify(f"{row['name']}-{row['version']}")
         item["source"] = _source(item)
         item.pop("source_id", None)
         item.pop("source_name", None)
         item.pop("source_url", None)
-        item["results"] = [dict(x) for x in get_db().execute("""SELECT m.canonical_name model,m.canonical_slug model_slug,
-          br.score,br.metric,br.harness_name,br.scaffold,br.reasoning_setting,br.evaluated_at,br.confidence
-          FROM benchmark_results br JOIN models m ON m.id=br.model_id WHERE br.benchmark_id=? ORDER BY br.score DESC""", (row["id"],))]
+        result_clauses, result_params = ["br.benchmark_id=?"], [row["id"]]
+        if current_only:
+            result_clauses.append("b.is_current=1")
+        if benchmark_name:
+            result_clauses.append("b.name=?")
+            result_params.append(benchmark_name)
+        if version:
+            result_clauses.append("b.version=?")
+            result_params.append(version)
+        if model_ids:
+            result_clauses.append(f"br.model_id IN ({','.join('?' for _ in model_ids)})")
+            result_params.extend(model_ids)
+        item["results"] = [dict(x) for x in db.execute(f"""SELECT br.model_id,b.id benchmark_id,b.name benchmark,b.version,
+          m.canonical_name model,m.canonical_slug model_slug,
+          br.model_version,br.score,br.metric,br.task_subset,br.harness_name,br.harness_version,
+          br.scaffold,br.reasoning_setting,br.tool_policy,br.network_policy,br.step_budget,
+          br.token_budget,br.time_budget_seconds,br.attempts_per_task,br.grader_version,
+          br.confidence_interval,br.evaluated_at,br.confidence,s.name source_name,s.url source_url,
+          b.is_current,b.published_at,b.last_verified_at
+          FROM benchmark_results br JOIN models m ON m.id=br.model_id JOIN benchmarks b ON b.id=br.benchmark_id
+          LEFT JOIN sources s ON s.id=br.source_id WHERE {' AND '.join(result_clauses)}
+          ORDER BY br.metric,br.task_subset,br.harness_name,br.harness_version,br.scaffold,
+            br.reasoning_setting,br.tool_policy,br.network_policy,br.attempts_per_task,
+            br.grader_version,br.score DESC""", result_params)]
+        item["comparable_groups"] = comparable_groups(item["results"]) if compare_values else []
         data.append(item)
-    return _paged_envelope(data)
+    return _paged_envelope(data, compared_models=compare_values,
+                           caveat="Scores compare only within the same benchmark version, metric, task and published run configuration. Route prices are provider-specific.")
 
 
 @public.get("/api/v1/compatibility")

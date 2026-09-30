@@ -539,32 +539,61 @@ def get_new_releases(days: Annotated[int, Field(ge=1, le=365)] = 7,
 
 @server.tool(title="Get benchmarks", annotations=READ_ONLY, structured_output=True)
 def get_benchmarks(model: str | None = None, current_only: bool = False,
+                   benchmark: str | None = None, version: str | None = None,
+                   compare_models: Annotated[list[str] | None, Field(max_length=6)] = None,
                    limit: Limit = 10, cursor: str | None = None) -> dict[str, Any]:
-    """Get benchmark metadata and measurements without turning scores into a universal ranking."""
+    """Get source-backed benchmark results, optionally limited to shared comparable runs."""
     limit, offset = _page(limit, cursor)
     with _app().app_context():
         db = get_db()
         params, clauses = [], []
         if current_only:
             clauses.append("b.is_current=1")
+        if benchmark:
+            clauses.append("b.name=?")
+            params.append(benchmark)
+        if version:
+            clauses.append("b.version=?")
+            params.append(version)
         if model:
             found = _model(db, model)
             if not found:
                 raise ToolError(f"Unknown model: {model}")
             clauses.append("br.model_id=?")
             params.append(found["id"])
+        comparison_ids = []
+        for value in compare_models or []:
+            found = _model(db, value)
+            if not found:
+                raise ToolError(f"Unknown model: {value}")
+            comparison_ids.append(found["id"])
+        comparison_ids = list(dict.fromkeys(comparison_ids))
+        if compare_models and len(comparison_ids) < 2:
+            raise ToolError("Pass at least two distinct canonical models to compare benchmark results.")
+        if comparison_ids:
+            clauses.append(f"br.model_id IN ({','.join('?' for _ in comparison_ids)})")
+            params.extend(comparison_ids)
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
-        rows = [dict(row) for row in db.execute(f"""SELECT b.id,b.name,b.version,b.category,b.description,
-          b.methodology_url,b.published_at,b.last_verified_at,m.canonical_name model,m.canonical_slug model_slug,
-          br.score,br.metric,br.harness_name,br.scaffold,br.reasoning_setting,br.evaluated_at,br.confidence,
-          s.name source_name,s.url source_url FROM benchmarks b LEFT JOIN benchmark_results br ON br.benchmark_id=b.id
+        rows = [dict(row) for row in db.execute(f"""SELECT b.id benchmark_id,b.name,b.version,b.category,b.description,
+          b.is_current,b.methodology_url,b.published_at,b.last_verified_at,m.id model_id,
+          m.canonical_name model,m.canonical_slug model_slug,br.model_version,
+          br.score,br.metric,br.task_subset,br.harness_name,br.harness_version,br.scaffold,
+          br.reasoning_setting,br.tool_policy,br.network_policy,br.step_budget,br.token_budget,
+          br.time_budget_seconds,br.attempts_per_task,br.grader_version,br.confidence_interval,
+          br.evaluated_at,br.confidence,s.name source_name,s.url source_url
+          FROM benchmarks b LEFT JOIN benchmark_results br ON br.benchmark_id=b.id
           LEFT JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=COALESCE(br.source_id,b.source_id)
-          {where} ORDER BY b.name,b.version,br.score DESC""", params)]
+          {where} ORDER BY b.name,b.version,br.metric,br.task_subset,br.harness_name,
+            br.harness_version,br.scaffold,br.reasoning_setting,br.tool_policy,br.network_policy,
+            br.attempts_per_task,br.grader_version,br.score DESC""", params)]
         for row in rows:
             row["sources"] = ([{"name": row.pop("source_name"), "url": row.pop("source_url")}]
                               if row.get("source_url") else [])
-        return _paged(rows, limit, offset,
-                      caveat="Scores are benchmark-version and harness/scaffold specific; compare like with like.")
+        from .benchmark_queries import comparable_groups
+        groups = comparable_groups(rows) if comparison_ids else []
+        return _paged(rows, limit, offset, compared_models=compare_models or [],
+                      comparable_groups=groups,
+                      caveat="Scores compare only within the same benchmark version, metric, task and published run configuration. Unknown configuration does not establish comparability.")
 
 
 @server.tool(title="Calculate route cost", annotations=READ_ONLY, structured_output=True)
