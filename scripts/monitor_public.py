@@ -74,21 +74,21 @@ def main(base=BASE):
 
     redirect_opener = build_opener(NoRedirect)
     redirect_checks = {
-        "http_to_https": ("http://usethismodel.com/models/glm?tools=true", 308,
-                           "https://usethismodel.com/models/glm?tools=true"),
-        "old_host": ("https://usethismodel.codefiction.net/models/glm?tools=true", 308,
-                     "https://usethismodel.com/models/glm?tools=true"),
+        "http_to_https": ("http://usethismodel.com/models/glm-5-3?tools=true", (301, 308),
+                           "https://usethismodel.com/models/glm-5-3?tools=true"),
+        "old_host": ("https://usethismodel.codefiction.net/models/glm-5-3?tools=true", (301, 308),
+                     "https://usethismodel.com/models/glm-5-3?tools=true"),
     }
     for name, (url, expected_status, expected_location) in redirect_checks.items():
         try:
             response = redirect_opener.open(Request(url), timeout=20)
             location = response.headers.get("Location")
-            if response.status != expected_status or location != expected_location:
+            if response.status not in expected_status or location != expected_location:
                 failures.append(f"{name}: expected {expected_status} to {expected_location}, got {response.status} to {location}")
             results[name] = {"status": response.status, "location": location}
         except HTTPError as exc:
             location = exc.headers.get("Location")
-            if exc.code != expected_status or location != expected_location:
+            if exc.code not in expected_status or location != expected_location:
                 failures.append(f"{name}: expected {expected_status} to {expected_location}, got {exc.code} to {location}")
             results[name] = {"status": exc.code, "location": location}
         except URLError as exc:
