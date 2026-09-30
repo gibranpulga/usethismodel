@@ -4,7 +4,7 @@
   <div class="filter-grid decision-filters">
     {% if action == '/compatibility' %}<label>Workflow<select name="workflow"><option value="">Any workflow</option>{% for workflow in options.workflows %}<option value="{{ workflow.slug }}" {% if filters.get('workflow') in [workflow.slug,workflow.name] %}selected{% endif %}>{{ workflow.name }}</option>{% endfor %}</select></label>{% endif %}
     <label>Use case<select name="use_case"><option value="">Any use case</option>{% for use_case in options.use_cases %}<option value="{{ use_case.slug }}" {% if filters.get('use_case') == use_case.slug %}selected{% endif %}>{{ use_case.name }}</option>{% endfor %}</select></label>
-    <label>Harness<select name="harness"><option value="">Any harness</option>{% for harness in options.harnesses %}<option value="{{ harness.name }}" {% if filters.get('harness') == harness.name %}selected{% endif %}>{{ harness.name }}</option>{% endfor %}</select></label>
+    <label>Harness<select name="harness"><option value="">Any harness</option>{% for harness in options.harnesses %}<option value="{{ slugify(harness.name) }}" {% if filters.get('harness') in [harness.name,slugify(harness.name)] %}selected{% endif %}>{{ harness.name }}</option>{% endfor %}</select></label>
     <label>Budget · max output price<select name="output_max"><option value="">Any budget</option>{% for value,label in [('0','$0 route'),('1','Up to $1 / M'),('2','Up to $2 / M'),('5','Up to $5 / M'),('10','Up to $10 / M')] %}<option value="{{ value }}" {% if filters.get('output_max') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
   </div>
   <fieldset class="capability-picker"><legend>Required capabilities</legend><div class="toggle-row core-toggles">

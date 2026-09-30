@@ -85,6 +85,32 @@ def test_homepage_satisfies_public_monitor_content_checks(client):
     assert all(marker in response.data for marker in REQUIRED['homepage'])
 
 
+def test_homepage_release_cards_expose_date_provenance_and_capabilities(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "New models this week" in body
+    assert "Release provenance:" in body
+    assert "Tools:" in body
+    assert 'href="/releases"' in body
+
+
+def test_finder_harness_select_uses_canonical_slugs_and_modality_labels(client):
+    response = client.get("/models")
+    body = response.get_data(as_text=True)
+    assert 'value="hermes-agent"' in body
+    assert "text-&gt;text" not in body
+    assert "Text LLM" in body or "Multimodal LLM" in body
+
+
+def test_true_free_and_subscription_access_stay_visibly_distinct(client):
+    body = client.get("/models?included=1").get_data(as_text=True)
+    assert "Included with" in body or "SUBSCRIPTION REQUIRED" in body
+    free_body = client.get("/models?free=1").get_data(as_text=True)
+    assert "FREE API" in free_body or "No route matches" in free_body
+    assert "FREE route" not in free_body
+
+
 def test_plan_catalog_preserves_vague_limits_and_access_routes(client):
     response = client.get("/plans?harness=OpenCode&coding=1")
 

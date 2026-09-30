@@ -56,6 +56,7 @@ def create_app(test_config=None):
     init_db(app)
     app.register_blueprint(public)
     app.jinja_env.globals["slugify"] = slugify
+    app.jinja_env.globals["modality_category"] = modality_category
 
     @app.before_request
     def content_security_nonce():
@@ -283,7 +284,24 @@ def create_app(test_config=None):
     @app.get("/")
     def home():
         filters, interpreted = interpreted_filters()
-        latest = route_rows(db(), {"release": "week", "sort": "newest", "limit": 3})
+        latest = rows("""SELECT m.id,m.canonical_name,m.canonical_slug,m.vendor,m.modality,m.released_at,
+          m.release_date_kind,l.name lab_name,
+          (SELECT COUNT(*) FROM provider_offerings o WHERE o.model_id=m.id) route_count,
+          (SELECT tool_support FROM provider_offerings o WHERE o.model_id=m.id
+             ORDER BY CASE tool_support WHEN 'YES' THEN 0 WHEN 'UNKNOWN' THEN 1 ELSE 2 END LIMIT 1) tool_support,
+          (SELECT name FROM sources s JOIN data_observations d ON d.source_id=s.id
+             WHERE d.entity='model:'||m.id AND d.field IN ('released_at','release_date') ORDER BY d.id DESC LIMIT 1) release_source_name,
+          (SELECT url FROM sources s JOIN data_observations d ON d.source_id=s.id
+             WHERE d.entity='model:'||m.id AND d.field IN ('released_at','release_date') ORDER BY d.id DESC LIMIT 1) release_source_url
+          FROM models m LEFT JOIN labs l ON l.id=m.lab_id
+          WHERE m.released_at>=? AND m.status!='DEPRECATED'
+          ORDER BY m.released_at DESC,m.canonical_name LIMIT 3""",
+          ((date.today() - timedelta(days=7)).isoformat(),))
+        latest = [dict(item) for item in latest]
+        for item in latest:
+            item["category"] = modality_category(item["modality"], item["canonical_name"])
+            item["release_confidence"] = {"official": "Official", "publisher_metadata": "Publisher metadata",
+                "aggregator": "Aggregator"}.get(item["release_date_kind"], "Unverified")
         popular = rows("""SELECT m.id,m.canonical_name,m.canonical_slug,COUNT(o.id) route_count
           FROM models m JOIN provider_offerings o ON o.model_id=m.id GROUP BY m.id
           ORDER BY route_count DESC,m.canonical_name LIMIT 3""")
