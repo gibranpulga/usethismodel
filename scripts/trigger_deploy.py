@@ -11,14 +11,16 @@ APP = os.environ.get('COOLIFY_APP_ID')
 
 
 def trigger(credential_path):
-    if not APP:
-        raise ValueError('COOLIFY_APP_ID must be configured in the private deployment environment')
     path = Path(credential_path)
     if stat.S_IMODE(path.stat().st_mode) != 0o600:
         raise ValueError('Deployment credential must be mode 0600')
-    token = json.loads(path.read_text())['token']
+    credential = json.loads(path.read_text())
+    app_id = APP or credential.get('application_id')
+    if not app_id:
+        raise ValueError('application_id must be configured in the private deployment credential')
+    token = credential['token']
     request = Request('http://127.0.0.1:8000/api/v1/deploy', method='POST',
-                      data=json.dumps({'uuid': APP, 'force': False}).encode(),
+                      data=json.dumps({'uuid': app_id, 'force': False}).encode(),
                       headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'Accept': 'application/json'})
     with urlopen(request, timeout=45) as response:
         result = json.load(response)

@@ -32,9 +32,9 @@ The account needs Git, Python 3.12+, `flock`, Docker group access, and an SSH
 credential authorized to push this repository. The SSH host key must already be
 verified and known. Git is noninteractive (`BatchMode=yes`); authentication
 failures stop the run. Do not embed tokens in the remote URL or cron entry. The deploy-only Coolify credential is stored at `state/coolify-deploy.json` with
-mode 0600. It is loaded by the Python helper, sent only in an Authorization header
-to the local API, and never enters command arguments, Git, reports or logs. The
-helper reads the application ID from private deployment settings. Coolify tokens are team-scoped;
+mode 0600. Its `token`, `application_id`, and `volume_id` fields stay private.
+The token is sent only in an Authorization header to the local API and never
+enters command arguments, Git, reports or logs. Coolify tokens are team-scoped;
 this token has only the deploy ability, without read/write/root/sensitive access.
 It has no automatic expiry; rotate it deliberately and replace the private file.
 An explicit trigger is required because the configured auto-deploy setting did

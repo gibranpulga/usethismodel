@@ -58,20 +58,18 @@ def test_validation_failure_never_pushes(scheduler, tmp_path):
 
 def test_backup_refuses_ambiguous_live_containers(scheduler, monkeypatch):
     helper = sys.modules["live_db_backup"]
-    monkeypatch.setattr(helper, "APP", "test-app")
-    monkeypatch.setattr(helper, "VOLUME", "test-volume")
 
     def output(args, **kwargs):
         if args[1] == "ps":
             return "abc\ndef\n"
         return json.dumps([{
             "State": {"Running": True, "Health": {"Status": "healthy"}},
-            "Mounts": [{"Name": helper.VOLUME, "Destination": "/data"}],
+                "Mounts": [{"Name": "test-volume", "Destination": "/data"}],
         }]).encode()
 
     monkeypatch.setattr(helper.subprocess, "check_output", output)
     with pytest.raises(RuntimeError, match="exactly one"):
-        helper.live_container()
+        helper.live_container("test-app", "test-volume")
 
 
 def test_failure_report_omits_exception_secrets(scheduler, tmp_path):

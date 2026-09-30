@@ -26,17 +26,17 @@ finally:
 """
 
 
-def live_container():
-    if not APP or not VOLUME:
-        raise RuntimeError("COOLIFY_APP_ID and COOLIFY_VOLUME_ID must be configured privately")
+def live_container(app_id, volume_id):
+    if not app_id or not volume_id:
+        raise RuntimeError("application_id and volume_id must be configured privately")
     ids = subprocess.check_output(
-        ["docker", "ps", "--filter", f"name={APP}", "--format", "{{.ID}}"], text=True
+        ["docker", "ps", "--filter", f"name={app_id}", "--format", "{{.ID}}"], text=True
     ).split()
     candidates = []
     for container in ids:
         details = json.loads(subprocess.check_output(["docker", "inspect", container]))[0]
         mounts = details.get("Mounts", [])
-        if any(m.get("Name") == VOLUME and m.get("Destination") == "/data" for m in mounts):
+        if any(m.get("Name") == volume_id and m.get("Destination") == "/data" for m in mounts):
             health = details["State"].get("Health", {}).get("Status", "healthy")
             if details["State"]["Running"] and health == "healthy":
                 candidates.append(container)
@@ -47,13 +47,18 @@ def live_container():
 
 def backup(destination):
     destination = Path(destination)
+    state_dir = destination.resolve().parent.parent
+    config_path = state_dir / "coolify-deploy.json"
+    config = json.loads(config_path.read_text()) if config_path.exists() else {}
+    app_id = APP or config.get("application_id")
+    volume_id = VOLUME or config.get("volume_id")
     destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = destination.with_suffix(destination.suffix + ".partial")
     try:
         with temporary.open("xb") as stream:
             os.chmod(temporary, 0o600)
             subprocess.run(
-                ["docker", "exec", "--user", "10001", live_container(), "python", "-c", REMOTE_BACKUP],
+                ["docker", "exec", "--user", "10001", live_container(app_id, volume_id), "python", "-c", REMOTE_BACKUP],
                 stdout=stream, check=True, timeout=180,
             )
         with sqlite3.connect(f"{temporary.resolve().as_uri()}?mode=ro", uri=True) as db:
