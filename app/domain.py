@@ -61,9 +61,11 @@ def compatibility_for(
     workflow_check = None
     if workflow_id is not None:
         workflow_rows = db.execute(
-            """SELECT whc.state,whc.reason,wi.name integration_name
+            """SELECT whc.state,whc.reason,whc.verified_at,wi.name integration_name,
+                      s.name source_name,s.url source_url
                FROM workflow_harness_compatibility whc
                JOIN workflow_integrations wi ON wi.id=whc.integration_id
+               LEFT JOIN sources s ON s.id=whc.source_id
                WHERE whc.harness_id=? AND wi.workflow_id=?
                ORDER BY CASE whc.state WHEN 'YES' THEN 0 WHEN 'CONFIGURATION' THEN 1
                          WHEN 'PARTIAL' THEN 2 WHEN 'UNKNOWN' THEN 3 ELSE 4 END""",
@@ -74,12 +76,18 @@ def compatibility_for(
                 "state": workflow_rows[0]["state"],
                 "reason": workflow_rows[0]["reason"],
                 "integrations": [row["integration_name"] for row in workflow_rows],
+                "verified_at": max(row["verified_at"] for row in workflow_rows),
+                "sources": list({(row["source_name"], row["source_url"]):
+                                 {"name": row["source_name"], "url": row["source_url"]}
+                                 for row in workflow_rows if row["source_url"]}.values()),
             }
         else:
             workflow_check = {
                 "state": UNKNOWN,
                 "reason": "No source-backed host result is recorded for this workflow and harness.",
                 "integrations": [],
+                "verified_at": None,
+                "sources": [],
             }
 
     evidence = db.execute(
@@ -101,6 +109,8 @@ def compatibility_for(
         return {
             "status": status,
             "confidence": "HIGH",
+            "derived": False,
+            "evidence_kind": "EXPLICIT_ROUTE_EVIDENCE",
             "explanation": explanation,
             "access_method": evidence["access_method"],
             "checks": {
@@ -111,6 +121,11 @@ def compatibility_for(
                 "workflow_host": workflow_check["state"] if workflow_check else None,
             },
             "source": {"name": evidence["source_name"], "url": evidence["source_url"]},
+            "sources": [
+                {"name": evidence["source_name"], "url": evidence["source_url"]},
+                *(workflow_check["sources"] if workflow_check else []),
+            ],
+            "workflow_evidence": workflow_check,
             "verified_at": evidence["verified_at"],
         }
 
@@ -123,7 +138,8 @@ def compatibility_for(
     # An explicit model/route result is authoritative for ordinary compatibility,
     # but cannot manufacture MCP support in a harness that lacks it.
     if override and not mcp_workflow:
-        return {"status": override["status"], "confidence": "HIGH", "explanation": override["reason"]}
+        return {"status": override["status"], "confidence": "HIGH", "derived": False,
+                "evidence_kind": "EXPLICIT_MODEL_OR_ROUTE_OVERRIDE", "explanation": override["reason"]}
     # OpenRouter is a documented, explicit harness integration. An exact route
     # on OpenRouter can be derived for harnesses whose official access-method
     # record says they support it; this never generalizes to other providers.
@@ -151,6 +167,7 @@ def compatibility_for(
                 "status": derived_status,
                 "confidence": "MEDIUM",
                 "derived": True,
+                "evidence_kind": "DERIVED_OPENROUTER_ACCESS",
                 "explanation": (
                     f"Harness capability: documented OpenRouter access ({access['note'] or access['access_method']}). "
                     "Provider interface: OpenRouter route using an OpenRouter API key. "
@@ -170,10 +187,94 @@ def compatibility_for(
                 "sources": [source for source in [
                     {"name": access["source_name"], "url": access["source_url"]},
                     {"name": offering["route_source_name"], "url": offering["route_source_url"]},
+                    *(workflow_check["sources"] if workflow_check else []),
                 ] if source["url"]],
+                "workflow_evidence": workflow_check,
                 "verified_at": access["verified_at"],
                 "provider_verified_at": offering["last_verified_at"],
             }
+    # A direct-provider route can be derived only from a matching, affirmative
+    # protocol fact on both sides. Provider branding alone is never consulted.
+    protocol = db.execute(
+        """SELECT ppe.protocol,ppe.note provider_note,ppe.verified_at provider_verified_at,
+                  ps.name provider_source_name,ps.url provider_source_url,
+                  hps.access_method,hps.note harness_note,hps.verified_at harness_verified_at,
+                  hs.name harness_source_name,hs.url harness_source_url
+           FROM provider_protocol_evidence ppe
+           JOIN harness_protocol_support hps ON hps.protocol=ppe.protocol
+           JOIN sources ps ON ps.id=ppe.source_id
+           JOIN sources hs ON hs.id=hps.source_id
+           WHERE ppe.provider_id=? AND hps.harness_id=?
+             AND ppe.state='YES' AND hps.state='YES'
+           ORDER BY CASE hps.access_method WHEN 'NATIVE_PROVIDER' THEN 0 ELSE 1 END,
+                    ppe.protocol LIMIT 1""",
+        (offering["provider_id"], harness_id),
+    ).fetchone()
+    claude_code_model_allowed = (
+        harness["name"] != "Claude Code"
+        or "claude" in (offering["canonical_name"] or "").lower()
+    )
+    if protocol and claude_code_model_allowed:
+        if workflow_check and workflow_check["state"] == "NO":
+            derived_status = "NOT_COMPATIBLE"
+        elif workflow_check and workflow_check["state"] == UNKNOWN:
+            derived_status = UNKNOWN
+        elif mcp_workflow and harness["supports_mcp"] != 1:
+            derived_status = "UNKNOWN" if harness["supports_mcp"] is None else "NOT_COMPATIBLE"
+        elif offering["tool_support"] == "NO":
+            derived_status = "PARTIAL"
+        elif offering["tool_support"] == UNKNOWN:
+            derived_status = "PARTIAL"
+        else:
+            derived_status = (
+                "COMPATIBLE_WITH_CONFIGURATION"
+                if protocol["access_method"].startswith("CUSTOM_") or workflow_check
+                else "COMPATIBLE"
+            )
+        sources = [
+            {"name": protocol["harness_source_name"], "url": protocol["harness_source_url"]},
+            {"name": protocol["provider_source_name"], "url": protocol["provider_source_url"]},
+            {"name": offering["route_source_name"], "url": offering["route_source_url"]},
+            *(workflow_check["sources"] if workflow_check else []),
+        ]
+        sources = [item for item in sources if item["url"]]
+        return {
+            "status": derived_status,
+            "confidence": "MEDIUM",
+            "derived": True,
+            "evidence_kind": "DERIVED_PROTOCOL_INTERSECTION",
+            "explanation": (
+                f"Protocol match: {protocol['protocol']}. {protocol['harness_note']} "
+                f"Provider endpoint: {protocol['provider_note']} "
+                f"Route tool calling: {offering['tool_support']}. "
+                "Exact route reliability is not established by protocol compatibility."
+                + (f" Workflow host: {workflow_check['reason']}" if workflow_check else "")
+            ),
+            "access_method": protocol["access_method"].replace("_", " ").title(),
+            "protocol_evidence": {
+                "protocol": protocol["protocol"],
+                "provider_state": "YES",
+                "harness_state": "YES",
+                "provider_note": protocol["provider_note"],
+                "harness_note": protocol["harness_note"],
+                "provider_source_url": protocol["provider_source_url"],
+                "harness_source_url": protocol["harness_source_url"],
+                "provider_verified_at": protocol["provider_verified_at"],
+                "harness_verified_at": protocol["harness_verified_at"],
+            },
+            "checks": {
+                "harness_can_use_model": "YES",
+                "harness_supports_mcp": "YES" if harness["supports_mcp"] else UNKNOWN,
+                "provider_route_tool_calls": offering["tool_support"],
+                "tool_call_reliability": UNKNOWN,
+                "workflow_host": workflow_check["state"] if workflow_check else None,
+            },
+            "source": sources[0],
+            "sources": sources,
+            "workflow_evidence": workflow_check,
+            "verified_at": protocol["harness_verified_at"],
+            "provider_verified_at": protocol["provider_verified_at"],
+        }
     provider = db.execute(
         "SELECT * FROM harness_provider_compatibility WHERE harness_id=? AND provider_id=?",
         (harness_id, offering["provider_id"]),
@@ -191,63 +292,62 @@ def compatibility_for(
             "confidence": "LOW",
             "explanation": f"No documented {harness['name']} route for {offering['provider_name']}.",
         }
-    if offering["tool_support"] == "NO":
-        return {
-            "status": "PARTIAL",
-            "confidence": "HIGH",
-            "explanation": "The provider route exists, but this offering does not expose tool calling.",
-        }
-    mcp = "YES" if harness["supports_mcp"] else "NO" if harness["supports_mcp"] == 0 else UNKNOWN
-    if workflow_check and workflow_check["state"] in {"NO", UNKNOWN}:
-        return {
-            "status": "NOT_COMPATIBLE" if workflow_check["state"] == "NO" else UNKNOWN,
-            "confidence": "MEDIUM",
-            "explanation": workflow_check["reason"],
-            "checks": {
-                "harness_can_use_model": "YES" if mode != UNKNOWN else UNKNOWN,
-                "harness_supports_mcp": mcp,
-                "provider_route_tool_calls": offering["tool_support"],
-                "tool_call_reliability": "UNKNOWN",
-                "workflow_host": workflow_check["state"],
-            },
-        }
-    if mcp_workflow and mcp != "YES":
-        return {
-            "status": "NOT_COMPATIBLE" if mcp == "NO" else UNKNOWN,
-            "confidence": "MEDIUM",
-            "explanation": "The workflow requires MCP but harness MCP support is not documented as available.",
-        }
-    if override:
-        return {"status": override["status"], "confidence": "HIGH", "explanation": override["reason"]}
-    if offering["tool_support"] == UNKNOWN:
-        return {
-            "status": "PARTIAL",
-            "confidence": "MEDIUM",
-            "explanation": "Provider integration is documented, but tool support for this route is unknown.",
-        }
-    configured = mode in {"CONFIGURATION", "OPENAI_COMPATIBLE", "OPENROUTER"}
-    status = "COMPATIBLE_WITH_CONFIGURATION" if configured else "COMPATIBLE"
-    access_method = {
-        "OPENROUTER": "OpenRouter API key",
-        "OPENAI_COMPATIBLE": "custom OpenAI-compatible endpoint",
-        "CONFIGURATION": "provider API key and harness configuration",
-        "NATIVE": "native provider login or API key (route dependent)",
-    }.get(mode, "documented provider integration")
-    bits = [f"Provider support: {mode.replace('_', ' ').title()}", "Tool calling: Yes"]
-    if mcp_workflow:
-        bits.append("Harness MCP: Yes")
-    if workflow_check:
-        bits.append(f"Workflow host: {workflow_check['state'].replace('_', ' ').title()}")
     return {
-        "status": status,
-        "confidence": "MEDIUM",
-        "explanation": ". ".join(bits) + ". No route-specific reliability test is recorded.",
-        "access_method": access_method,
+        "status": UNKNOWN,
+        "confidence": "LOW",
+        "derived": False,
+        "evidence_kind": "INCOMPLETE_PROTOCOL_EVIDENCE",
+        "explanation": (
+            f"{harness['name']} has a provider access record for {offering['provider_name']}, "
+            "but no affirmative matching harness protocol and provider endpoint capability "
+            "is recorded for this route."
+        ),
         "checks": {
-            "harness_can_use_model": "YES",
-            "harness_supports_mcp": mcp,
+            "harness_can_use_model": UNKNOWN,
+            "harness_supports_mcp": "YES" if harness["supports_mcp"] else UNKNOWN,
             "provider_route_tool_calls": offering["tool_support"],
-            "tool_call_reliability": "UNKNOWN",
+            "tool_call_reliability": UNKNOWN,
             "workflow_host": workflow_check["state"] if workflow_check else None,
         },
     }
+def compatible_route_rows(db, filters, harness_id, workflow_id=None, require_mcp=False):
+    """Qualify routes in SQL-sized pages, then return all evidence-backed matches.
+
+    The filters' public limit and offset are applied by callers after this
+    function has selected compatible rows. Candidate pagination is internal,
+    deterministic, and has no catalog-size ceiling.
+    """
+    from .query import route_rows
+
+    page_size = 500
+    after_id = 0
+    matches = []
+    while True:
+        candidates = route_rows(
+            db,
+            {
+                **filters,
+                "_compatibility_harness_id": harness_id,
+                "_after_offering_id": after_id,
+                "limit": page_size,
+                "offset": 0,
+            },
+        )
+        for row in candidates:
+            result = compatibility_for(
+                db, harness_id, row["offering_id"], require_mcp, workflow_id
+            )
+            if result["status"] in {
+                "COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"
+            }:
+                matches.append({**row, "_compatibility": result})
+        if len(candidates) < page_size:
+            break
+        after_id = candidates[-1]["offering_id"]
+    matches.sort(key=lambda row: (
+        row.get("input_price") is None,
+        row.get("input_price") or 0,
+        row.get("canonical_name", ""),
+        row.get("provider_name", ""),
+    ))
+    return matches

@@ -20,7 +20,7 @@ from flask import (
 )
 
 from .db import get_db
-from .domain import compatibility_for
+from .domain import compatibility_for, compatible_route_rows
 from .query import (
     access_route_rows,
     modality_category,
@@ -221,40 +221,45 @@ def filtered_routes(args):
             return [], filters
     route_filters = {key: value for key, value in filters.items() if key != "workflow"}
     try:
-        requested_limit = min(100_000, max(1, int(filters.get("limit", 100))))
+        requested_limit = max(1, int(filters.get("limit", 100)))
     except (TypeError, ValueError):
         requested_limit = 100
     try:
-        requested_offset = min(10_000, max(0, int(filters.get("offset", 0))))
+        requested_offset = max(0, int(filters.get("offset", 0)))
     except (TypeError, ValueError):
         requested_offset = 0
     needs_compatibility = bool(harness or route_filters.get("mcp") == "1" or workflow)
     try:
-        candidates = route_rows(get_db(), {**route_filters, "limit": 100_000, "offset": 0}
-                                if needs_compatibility else
-                                {**route_filters, "limit": requested_limit, "offset": requested_offset})
+        if harness:
+            qualified = compatible_route_rows(
+                get_db(), route_filters, harness["id"], workflow["id"] if workflow else None,
+                route_filters.get("mcp") == "1" or workflow is not None,
+            )
+            return qualified, filters
+        if needs_compatibility:
+            if workflow:
+                host_rows = get_db().execute("""SELECT DISTINCT h.id FROM workflow_harness_compatibility whc
+                  JOIN workflow_integrations wi ON wi.id=whc.integration_id
+                  JOIN harnesses h ON h.id=whc.harness_id WHERE wi.workflow_id=?
+                  AND whc.state IN ('YES','CONFIGURATION','PARTIAL')""", (workflow["id"],)).fetchall()
+            else:
+                host_rows = get_db().execute("SELECT id FROM harnesses WHERE supports_mcp=1").fetchall()
+            qualified = {}
+            for host in host_rows:
+                for row in compatible_route_rows(
+                    get_db(), route_filters, host["id"], workflow["id"] if workflow else None, True
+                ):
+                    qualified[row["offering_id"]] = row
+            ordered = sorted(qualified.values(), key=lambda row: (
+                row.get("input_price") is None, row.get("input_price") or 0,
+                row.get("canonical_name", ""), row.get("provider_name", "")
+            ))
+            return ordered, filters
+        else:
+            candidates = route_rows(get_db(), {**route_filters, "limit": requested_limit, "offset": requested_offset})
     except ValueError as exc:
         filters["filter_errors"] = [str(exc)]
         return [], filters
-    if not harness and filters.get("mcp") == "1":
-        # MCP is a workflow property: require at least one documented MCP harness route.
-        mcp_harnesses = get_db().execute("SELECT id FROM harnesses WHERE supports_mcp=1").fetchall()
-        matches = [row for row in candidates if any(
-            compatibility_for(get_db(), h["id"], row["offering_id"], True)["status"]
-            in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}
-            for h in mcp_harnesses)]
-        return matches[requested_offset:requested_offset + requested_limit], filters
-    if harness:
-        kept = []
-        for row in candidates:
-            match = compatibility_for(
-                get_db(), harness["id"], row["offering_id"],
-                route_filters.get("mcp") == "1" or workflow is not None,
-                workflow["id"] if workflow else None,
-            )
-            if match["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}:
-                kept.append({**row, "_compatibility": match})
-        return kept[requested_offset:requested_offset + requested_limit], filters
     return candidates, filters
 
 

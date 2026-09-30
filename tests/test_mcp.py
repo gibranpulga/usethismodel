@@ -5,6 +5,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 from starlette.testclient import TestClient
 
 from app import create_app
+from app.data_snapshot import apply_snapshot
+from app.db import get_db as app_get_db
 from app.mcp_server import MAX_LIMIT, bind_app, create_http_app, get_db, server
 
 
@@ -133,9 +135,42 @@ def test_public_mcp_rate_limit(mcp_app, monkeypatch):
     assert limited.json()["error"] == "rate_limit_exceeded"
 
 
-def test_mcp_compatibility_candidate_budget_is_bounded(mcp_app):
-    from app.mcp_server import MAX_CANDIDATES
-    assert MAX_CANDIDATES == 10_000
+def test_mcp_compatibility_has_no_catalog_candidate_ceiling(mcp_app):
+    from app import mcp_server
+    assert not hasattr(mcp_server, "MAX_CANDIDATES")
+    assert mcp_server._page(10, "10001") == (10, 10001)
+
+
+def test_mcp_route_scan_returns_catalogs_larger_than_ten_thousand(mcp_app):
+    from app.mcp_server import _calculate_routes
+
+    with mcp_app.app_context():
+        db = get_db()
+        db.execute("PRAGMA query_only=OFF")
+        seed = db.execute("""SELECT model_id,provider_id,api_model_id,context_limit,
+          max_output_tokens,tool_support,structured_output_support,free_status,source_id
+          FROM provider_offerings LIMIT 1""").fetchone()
+        rows = [tuple(seed[:2]) + (f"scale-test-{i}",) + tuple(seed[3:]) for i in range(10_001)]
+        db.executemany("""INSERT INTO provider_offerings
+          (model_id,provider_id,api_model_id,context_limit,max_output_tokens,tool_support,
+           structured_output_support,free_status,source_id) VALUES(?,?,?,?,?,?,?,?,?)""", rows)
+        db.commit()
+        result = _calculate_routes(db, {}, None, None, False)
+        db.execute("PRAGMA query_only=ON")
+    assert len(result) > 10_000
+
+
+def test_mcp_compatibility_exposes_protocol_evidence(mcp_app):
+    with mcp_app.app_context():
+        db = app_get_db()
+        apply_snapshot(db, "data/catalog.json")
+        route_id = db.execute("""SELECT o.id FROM provider_offerings o
+          JOIN providers p ON p.id=o.provider_id WHERE p.name='DeepSeek'
+          AND o.tool_support='YES' LIMIT 1""").fetchone()[0]
+        result = call("get_compatibility", {"harness": "OpenCode", "route_id": route_id})
+    compatibility = result.structured_content["items"][0]["compatibility"]
+    assert compatibility["protocol_evidence"]["protocol"] == "OPENAI_CHAT_COMPLETIONS"
+    assert any("deepseek.com" in source["url"] for source in compatibility["sources"])
 
 
 def test_compatibility_result_cache_is_digest_keyed_and_copy_safe(mcp_app):

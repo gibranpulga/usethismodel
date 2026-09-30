@@ -458,6 +458,12 @@
       }
     ],
     "harness_model_overrides": [],
+    "harness_protocol_support": [
+      {
+        "path": "snapshot/harness_protocol_support/000000.json",
+        "sha256": "51d361d0a8118118ef4c485d862ffcfdb92f106c8d387639040765de854a2096"
+      }
+    ],
     "harness_provider_compatibility": [
       {
         "path": "snapshot/harness_provider_compatibility/000000.json",
@@ -903,6 +909,12 @@
         "sha256": "4a9fcaade8b35398a14127c183eb3d1be26ddab3c2b8148d3b14d618b72588b7"
       }
     ],
+    "provider_protocol_evidence": [
+      {
+        "path": "snapshot/provider_protocol_evidence/000000.json",
+        "sha256": "441b0cbff56b1d30a2ca8b9fc9c058926f96d60933f946b7be7e4edb7cc0714b"
+      }
+    ],
     "providers": [
       {
         "path": "snapshot/providers/000000.json",
@@ -1272,7 +1284,7 @@
     "sources": [
       {
         "path": "snapshot/sources/000000.json",
-        "sha256": "24fcd429713f18a955c225d1a3e00c3a5f41b784346f0d7edcb5cedd74d9fe67"
+        "sha256": "aa17c902b6e8b340b8e06c7131a6b148e6a063febace391433781c0ebdb04f4c"
       }
     ],
     "use_cases": [

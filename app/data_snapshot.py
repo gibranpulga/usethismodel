@@ -7,7 +7,8 @@ from pathlib import Path
 # Snapshot application must never erase local usage counters.
 EXCLUDED = {'schema_migrations', 'applied_snapshots', 'analytics_daily', 'rate_limit_windows'}
 OPTIONAL_SNAPSHOT_TABLES = {
-    'documentation_monitor_state', 'plan_value_history', 'model_identity_redirects'
+    'documentation_monitor_state', 'plan_value_history', 'model_identity_redirects',
+    'provider_protocol_evidence', 'harness_protocol_support'
 }
 
 

@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 from flask import Flask, abort, g, jsonify, redirect, render_template, request, url_for
 
 from .db import init_db
-from .domain import compatibility_for
+from .domain import compatibility_for, compatible_route_rows
 from .public import absolute_url, public, slugify
 from .query import (
     access_route_rows,
@@ -215,34 +215,32 @@ def create_app(test_config=None):
                   WHERE wi.workflow_id=? AND whc.state IN ('YES','CONFIGURATION','PARTIAL')""",
                   (workflow["id"],)).fetchall()]
         route_filters = {key: value for key, value in filters.items() if key != "workflow"}
-        # Qualification precedes pagination: the previous bounded candidate window
-        # could hide compatible routes later in the catalog.
-        query_filters = ({**route_filters, "limit": 100_000, "offset": 0}
-                         if harness_names else route_filters)
-        result = route_rows(db(), query_filters)
         if not harness_names:
-            return result
+            return route_rows(db(), route_filters)
         harnesses = [db().execute("SELECT id,name FROM harnesses WHERE name=?", (name,)).fetchone() for name in harness_names]
         if any(not harness for harness in harnesses):
             return []
+        qualified = [compatible_route_rows(
+            db(), route_filters, harness["id"], workflow["id"] if workflow else None,
+            filters.get("mcp") == "1" or workflow is not None,
+        ) for harness in harnesses]
+        by_harness = [{row["offering_id"]: row for row in group} for group in qualified]
+        ids = (set().union(*(set(group) for group in by_harness)) if workflow_only
+               else set.intersection(*(set(group) for group in by_harness)))
         kept = []
-        for route in result:
-            matches = [(harness["name"], compatibility_for(
-                db(), harness["id"], route["offering_id"],
-                filters.get("mcp") == "1" or workflow is not None,
-                workflow["id"] if workflow else None,
-            )) for harness in harnesses]
-            allowed = {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}
-            qualifies = (any(match["status"] in allowed for _, match in matches)
-                         if workflow_only else all(match["status"] in allowed for _, match in matches))
-            if qualifies:
-                match = next(value for _, value in matches if value["status"] in allowed)
-                if len(matches) > 1 and not workflow_only:
-                    match = {**match, "explanation": " ".join(f"{name}: {value['explanation']}" for name, value in matches)}
-                route["compatibility"] = match
-                kept.append(route)
-                if len(kept) >= requested_offset + requested_limit:
-                    break
+        for offering_id in sorted(ids):
+            route = next(group[offering_id] for group in by_harness if offering_id in group)
+            matches = [(harness["name"], group[offering_id]["_compatibility"])
+                       for harness, group in zip(harnesses, by_harness) if offering_id in group]
+            match = matches[0][1]
+            if len(matches) > 1 and not workflow_only:
+                match = {**match, "explanation": " ".join(
+                    f"{name}: {value['explanation']}" for name, value in matches
+                )}
+            route["compatibility"] = match
+            kept.append(route)
+        kept.sort(key=lambda row: (row.get("input_price") is None, row.get("input_price") or 0,
+                                   row.get("canonical_name", ""), row.get("provider_name", "")))
         return kept[requested_offset:requested_offset + requested_limit]
 
     @app.get("/health")
@@ -464,17 +462,24 @@ def create_app(test_config=None):
             abort(404)
         provider_id = provider["id"]
         routes = route_rows(db(), {"provider_id": provider_id, "limit": 48})
+        protocol_capabilities = rows("""SELECT ppe.*,p.name endpoint_provider,s.name source_name,s.url source_url
+          FROM provider_protocol_evidence ppe JOIN providers p ON p.id=ppe.provider_id
+          JOIN sources s ON s.id=ppe.source_id
+          WHERE ppe.provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?)
+          ORDER BY p.name,ppe.protocol""", (provider_id, provider_id))
         route_count = db().execute("""SELECT COUNT(*) FROM provider_offerings WHERE lifecycle_status!='REMOVED'
           AND provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?)""", (provider_id, provider_id)).fetchone()[0]
         sources = rows("""SELECT DISTINCT s.name,s.url,s.reliability,s.fetched_at FROM sources s WHERE s.id IN (
           SELECT source_id FROM provider_offerings WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?)
           UNION SELECT source_id FROM plans WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?)
-          UNION SELECT source_id FROM offers WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?))
-          ORDER BY s.reliability,s.name""", (provider_id, provider_id, provider_id, provider_id, provider_id, provider_id))
+          UNION SELECT source_id FROM offers WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?)
+          UNION SELECT source_id FROM provider_protocol_evidence WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?))
+          ORDER BY s.reliability,s.name""", (provider_id, provider_id, provider_id, provider_id,
+                                                provider_id, provider_id, provider_id, provider_id))
         verified = max([r["fetched_at"] for r in routes if r["fetched_at"]] + [s["fetched_at"] for s in sources if s["fetched_at"]], default=None)
         canonical = absolute_url(url_for('provider_detail_slug', provider_slug=provider_slug))
         schema = {"@context": "https://schema.org", "@type": "Dataset", "name": f"{provider['name']} AI model route catalog", "description": f"Source-backed prices, capabilities, offers and limits for {provider['name']} routes.", "url": canonical, "dateModified": verified[:10] if verified else None}
-        return render_template("provider_detail.html", title=f"{provider['name']} AI models, pricing & routes", provider=provider, routes=routes, route_count=route_count, plans=rows("SELECT * FROM plans WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?)", (provider_id, provider_id)), offers=rows("SELECT * FROM offers WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?) ORDER BY status,ends_at", (provider_id, provider_id)), sources=sources, last_verified_at=verified, canonical_url=canonical, structured_data=schema, meta_description=f"Documented {provider['name']} AI model routes, current prices, limits, offers, sources, and last verification dates.")
+        return render_template("provider_detail.html", title=f"{provider['name']} AI models, pricing & routes", provider=provider, routes=routes, route_count=route_count, protocol_capabilities=protocol_capabilities, plans=rows("SELECT * FROM plans WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?)", (provider_id, provider_id)), offers=rows("SELECT * FROM offers WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?) ORDER BY status,ends_at", (provider_id, provider_id)), sources=sources, last_verified_at=verified, canonical_url=canonical, structured_data=schema, meta_description=f"Documented {provider['name']} AI model routes, current prices, limits, offers, sources, and last verification dates.")
 
     @app.get("/harnesses")
     def harnesses():
@@ -499,21 +504,29 @@ def create_app(test_config=None):
           JOIN sources s ON s.id=hc.source_id WHERE hc.harness_id=? ORDER BY hc.claim_key""", (harness_id,))
         access_methods = rows("""SELECT ha.*,s.name source_name,s.url source_url FROM harness_access_methods ha
           JOIN sources s ON s.id=ha.source_id WHERE ha.harness_id=? ORDER BY ha.access_method""", (harness_id,))
-        routes = []
-        for route in route_rows(db()):
-            match = compatibility_for(db(), harness_id, route["offering_id"])
-            if match["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}:
-                routes.append({**route, "compatibility": match})
+        protocols = rows("""SELECT hps.*,s.name source_name,s.url source_url
+          FROM harness_protocol_support hps JOIN sources s ON s.id=hps.source_id
+          WHERE hps.harness_id=? ORDER BY hps.protocol,hps.access_method""", (harness_id,))
+        routes = [{**route, "compatibility": route["_compatibility"]}
+                  for route in compatible_route_rows(db(), {}, harness_id)]
         sources = rows("""SELECT DISTINCT s.name,s.url,s.reliability,s.fetched_at FROM sources s WHERE s.id IN (
           SELECT source_id FROM harnesses WHERE id=? UNION SELECT source_id FROM harness_mcp_capabilities WHERE harness_id=?
-          UNION SELECT source_id FROM harness_provider_compatibility WHERE harness_id=?) ORDER BY s.name""", (harness_id, harness_id, harness_id))
+          UNION SELECT source_id FROM harness_provider_compatibility WHERE harness_id=?
+          UNION SELECT source_id FROM harness_protocol_support WHERE harness_id=?) ORDER BY s.name""",
+          (harness_id, harness_id, harness_id, harness_id))
         verified = max([s["fetched_at"] for s in sources if s["fetched_at"]], default=None)
-        evidence_routes = [route for route in routes if route["compatibility"].get("source")]
+        routes.sort(key=lambda route: (
+            not bool(route["compatibility"].get("source")),
+            route.get("input_price") is None,
+            route.get("input_price") or 0,
+            route.get("canonical_name", ""),
+            route.get("provider_name", ""),
+        ))
         canonical_slug = next((alias for alias, target in {"codex": "codex-cli", "hermes": "hermes-agent"}.items()
                                if target == requested_slug), requested_slug)
         canonical = absolute_url(url_for('harness_detail_slug', harness_slug=canonical_slug))
         schema = {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": harness["name"], "applicationCategory": "DeveloperApplication", "operatingSystem": harness["supported_os"], "url": canonical, "softwareVersion": harness["current_version"]}
-        return render_template("harness_detail.html", title=f"{harness['name']} providers, models & MCP compatibility", item=dict(harness), capabilities=capabilities, claims=claims, access_methods=access_methods, routes=evidence_routes or routes[:24], sources=sources, last_verified_at=verified, canonical_url=canonical, structured_data=schema, meta_description=f"Documented {harness['name']} provider integrations, model-route compatibility, MCP capabilities, sources, and caveats.")
+        return render_template("harness_detail.html", title=f"{harness['name']} providers, models & MCP compatibility", item=dict(harness), capabilities=capabilities, claims=claims, access_methods=access_methods, protocols=protocols, routes=routes[:24], sources=sources, last_verified_at=verified, canonical_url=canonical, structured_data=schema, meta_description=f"Documented {harness['name']} provider integrations, model-route compatibility, MCP capabilities, sources, and caveats.")
 
     @app.get("/workflows")
     def workflows():

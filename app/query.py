@@ -204,6 +204,35 @@ def route_rows(db, filters=None):
         except (TypeError, ValueError):
             return []
         clauses.append("o.id=?")
+    compatibility_harness_id = filters.get("_compatibility_harness_id")
+    internal_scan = bool(filters.get("_scan_by_id") or compatibility_harness_id is not None)
+    if internal_scan:
+        try:
+            params.append(max(0, int(filters.get("_after_offering_id", 0))))
+        except (TypeError, ValueError):
+            return []
+        clauses.append("o.id > ?")
+    if compatibility_harness_id is not None:
+        try:
+            compatibility_harness_id = int(compatibility_harness_id)
+        except (TypeError, ValueError):
+            return []
+        params.append(compatibility_harness_id)
+        clauses.append("""(
+          EXISTS (SELECT 1 FROM route_compatibility_evidence e WHERE e.harness_id=? AND e.offering_id=o.id
+            AND e.mcp_workflow_status IN ('COMPATIBLE','COMPATIBLE_WITH_CONFIGURATION','PARTIAL'))
+          OR EXISTS (SELECT 1 FROM harness_model_overrides x WHERE x.harness_id=?
+            AND (x.offering_id=o.id OR (x.offering_id IS NULL AND x.model_id=m.id))
+            AND x.status IN ('COMPATIBLE','COMPATIBLE_WITH_CONFIGURATION','PARTIAL'))
+          OR EXISTS (SELECT 1 FROM harness_provider_compatibility hp WHERE hp.harness_id=?
+            AND hp.provider_id=o.provider_id AND hp.support_mode NOT IN ('NO','UNKNOWN'))
+          OR EXISTS (SELECT 1 FROM harness_access_methods ha WHERE ha.harness_id=?
+            AND ha.access_method='OPENROUTER' AND ha.state='YES' AND lower(p.name)='openrouter')
+          OR EXISTS (SELECT 1 FROM provider_protocol_evidence pe JOIN harness_protocol_support hs
+            ON hs.protocol=pe.protocol WHERE pe.provider_id=o.provider_id AND pe.state='YES'
+            AND hs.harness_id=? AND hs.state='YES')
+        )""")
+        params.extend([compatibility_harness_id] * 4)
     if filters.get("model_id") is not None:
         clauses.append("m.id=?")
         try:
@@ -298,6 +327,17 @@ def route_rows(db, filters=None):
         clauses.append("p.name != 'OpenRouter'")
     elif access == "free":
         clauses.append("(o.access_semantics IN ('FREE_API','FREE_TIER','PROMOTIONAL_FREE','TRIAL_CREDIT') AND input_price=0 AND output_price=0)")
+    order_clause = "o.id ASC" if internal_scan else """
+          CASE WHEN ?='featured' THEN CASE WHEN o.tool_support='YES' THEN 0 ELSE 1 END ELSE 0 END,
+          CASE WHEN ?='featured' THEN (SELECT COUNT(*) FROM provider_offerings coverage WHERE coverage.model_id=m.id) ELSE 0 END DESC,
+          CASE WHEN ?='featured' THEN CASE WHEN m.released_at IS NULL THEN 1 ELSE 0 END ELSE 0 END,
+          CASE WHEN ?='featured' THEN m.released_at END DESC,
+          CASE WHEN ?='featured' THEN CASE WHEN active_deal THEN 0 ELSE 1 END ELSE 0 END,
+          CASE WHEN ?='weighted_cost' THEN CASE WHEN input_price IS NULL OR output_price IS NULL THEN 1 ELSE 0 END ELSE 0 END,
+          CASE WHEN ?='weighted_cost' THEN (0.7*input_price + 0.3*output_price) END,
+          CASE WHEN ?='newest' THEN m.released_at END DESC,
+          media_price IS NULL, input_price IS NULL, COALESCE(media_price,input_price), output_price, m.canonical_name, p.name
+        """
     sql = f"""
         SELECT o.id offering_id,o.api_model_id,o.context_limit,o.max_output_tokens,o.tool_support,
           o.structured_output_support,o.free_status,o.access_semantics,o.access_requirement,o.caveat,o.fetched_at,m.id model_id,
@@ -322,23 +362,17 @@ def route_rows(db, filters=None):
           LEFT JOIN providers cp ON cp.id=p.canonical_provider_id
           LEFT JOIN labs l ON l.id=m.lab_id
         WHERE {' AND '.join(clauses)}
-        ORDER BY
-          CASE WHEN ?='featured' THEN CASE WHEN o.tool_support='YES' THEN 0 ELSE 1 END ELSE 0 END,
-          CASE WHEN ?='featured' THEN (SELECT COUNT(*) FROM provider_offerings coverage WHERE coverage.model_id=m.id) ELSE 0 END DESC,
-          CASE WHEN ?='featured' THEN CASE WHEN m.released_at IS NULL THEN 1 ELSE 0 END ELSE 0 END,
-          CASE WHEN ?='featured' THEN m.released_at END DESC,
-          CASE WHEN ?='featured' THEN CASE WHEN active_deal THEN 0 ELSE 1 END ELSE 0 END,
-          CASE WHEN ?='weighted_cost' THEN CASE WHEN input_price IS NULL OR output_price IS NULL THEN 1 ELSE 0 END ELSE 0 END,
-          CASE WHEN ?='weighted_cost' THEN (0.7*input_price + 0.3*output_price) END,
-          CASE WHEN ?='newest' THEN m.released_at END DESC,
-          media_price IS NULL, input_price IS NULL, COALESCE(media_price,input_price), output_price, m.canonical_name, p.name
+        ORDER BY {order_clause}
         LIMIT ? OFFSET ?
     """
     sort = filters.get("sort", "price")
     if sort == "value":  # Backward compatibility for existing saved searches.
         sort = "weighted_cost"
+    query_params = [*params]
+    if not internal_scan:
+        query_params.extend([sort] * 8)
     result = [dict(row) for row in db.execute(
-        sql, [*params, sort, sort, sort, sort, sort, sort, sort, sort, limit, offset]
+        sql, [*query_params, limit, 0 if internal_scan else offset]
     ).fetchall()]
     for row in result:
         row["weighted_cost"] = (

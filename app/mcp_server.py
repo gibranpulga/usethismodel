@@ -25,7 +25,7 @@ from starlette.applications import Starlette
 from starlette.routing import Mount
 
 from .db import get_db as _get_db
-from .domain import compatibility_for
+from .domain import compatible_route_rows
 from .public import slugify
 from .query import (
     modality_category,
@@ -87,8 +87,8 @@ def _page(limit: int, cursor: str | None) -> tuple[int, int]:
         offset = int(cursor)
     except (TypeError, ValueError) as exc:
         raise ToolError("cursor must be a non-negative integer returned by a previous call") from exc
-    if offset < 0 or offset > 10_000:
-        raise ToolError("cursor is outside the supported range 0..10000")
+    if offset < 0:
+        raise ToolError("cursor must be a non-negative integer returned by a previous call")
     return limit, offset
 
 
@@ -172,7 +172,6 @@ def _route_json(row, compatibility=None) -> dict[str, Any]:
     return result
 
 
-MAX_CANDIDATES = 10_000
 _compatibility_cache: OrderedDict[tuple, tuple[float, list[dict[str, Any]]]] = OrderedDict()
 _compatibility_cache_lock = threading.Lock()
 _compatibility_key_locks: OrderedDict[tuple, threading.Lock] = OrderedDict()
@@ -265,24 +264,32 @@ def _routes(db, filters: dict[str, Any], harness_name: str | None = None,
 
 
 def _calculate_routes(db, filters, harness, workflow, require_mcp):
-    candidates = route_rows(db, {**filters, "limit": MAX_CANDIDATES, "offset": 0})
     if not harness and not workflow:
-        return [_route_json(row) for row in candidates]
-    harnesses = [harness] if harness else list(db.execute("SELECT * FROM harnesses WHERE supports_mcp=1"))
-    found = []
-    for row in candidates:
-        matches = []
-        for candidate_harness in harnesses:
-            result = compatibility_for(db, candidate_harness["id"], row["offering_id"],
-                                       require_mcp or workflow is not None,
-                                       workflow["id"] if workflow else None)
-            if result["status"] in COMPATIBLE:
-                matches.append((candidate_harness, result))
-        if matches:
-            selected_harness, match = matches[0]
-            match = {"harness": selected_harness["name"], **match}
-            found.append(_route_json(row, match))
-    return found
+        result, after_id = [], 0
+        while True:
+            page = route_rows(db, {**filters, "_scan_by_id": True,
+                                   "_after_offering_id": after_id, "limit": 500, "offset": 0})
+            result.extend(_route_json(row) for row in page)
+            if len(page) < 500:
+                return result
+            after_id = page[-1]["offering_id"]
+    if harness:
+        rows = compatible_route_rows(db, filters, harness["id"],
+                                     workflow["id"] if workflow else None,
+                                     require_mcp or workflow is not None)
+        return [_route_json(row, {"harness": harness["name"], **row["_compatibility"]}) for row in rows]
+    hosts = db.execute("""SELECT DISTINCT h.* FROM workflow_harness_compatibility whc
+      JOIN workflow_integrations wi ON wi.id=whc.integration_id
+      JOIN harnesses h ON h.id=whc.harness_id WHERE wi.workflow_id=?
+      AND whc.state IN ('YES','CONFIGURATION','PARTIAL')""", (workflow["id"],)).fetchall()
+    found = {}
+    for candidate_harness in hosts:
+        for row in compatible_route_rows(db, filters, candidate_harness["id"], workflow["id"], True):
+            if row["offering_id"] not in found:
+                found[row["offering_id"]] = _route_json(
+                    row, {"harness": candidate_harness["name"], **row["_compatibility"]}
+                )
+    return list(found.values())
 
 
 def _filters(query=None, provider=None, tools=None, free=None, included=None, open_weights=None,

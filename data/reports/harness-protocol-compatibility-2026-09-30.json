@@ -1,0 +1,261 @@
+{
+  "generated_at": "2026-09-30",
+  "method": "Eligibility pair counts from exact source-backed route evidence, legacy access records, OpenRouter access, and affirmative matching protocol facts. Current qualified results are produced by the same domain function used by web, API, and MCP.",
+  "coverage": {
+    "before": {
+      "route_harness_pairs_eligible_under_previous_provider_or_route_facts": 5895,
+      "direct_provider_pairs": 3,
+      "openrouter_pairs": 5892
+    },
+    "after": {
+      "route_harness_pairs_qualified_by_current_engine": 6717,
+      "direct_provider_pairs": 825,
+      "openrouter_pairs": 5892
+    },
+    "explicit_route_evidence_pairs": 8,
+    "harness_provider_rows_before": 4,
+    "provider_protocol_facts": 30,
+    "harness_protocol_facts": 17,
+    "affirmative_provider_harness_protocol_intersections": 58,
+    "catalog_routes": 9329,
+    "harnesses": 18
+  },
+  "direct_provider_evidence_scope": [
+    "OpenAI",
+    "Anthropic",
+    "Google",
+    "DeepSeek",
+    "Z.ai",
+    "Alibaba Cloud",
+    "Mistral",
+    "OpenRouter"
+  ],
+  "remaining_unknown_reasons": [
+    "No affirmative common harness/provider protocol was recorded.",
+    "Custom endpoints may require endpoint-specific protocol evidence not currently in the provider catalog.",
+    "Tool/function support remains route-specific; endpoint-level capability does not override an offering tool_support value.",
+    "A matching protocol does not prove route reliability, account entitlement, regional availability, or model feature parity."
+  ],
+  "sources": [
+    {
+      "name": "Alibaba Cloud Model Studio API documentation",
+      "url": "https://www.alibabacloud.com/help/en/model-studio/getting-started/models",
+      "verified_at": "2026-09-30"
+    },
+    {
+      "name": "Anthropic Messages API documentation",
+      "url": "https://docs.anthropic.com/en/api/messages",
+      "verified_at": "2026-09-30"
+    },
+    {
+      "name": "Claude Code official docs",
+      "url": "https://code.claude.com/docs/en/llm-gateway",
+      "verified_at": "2026-09-29"
+    },
+    {
+      "name": "DeepSeek API documentation",
+      "url": "https://api-docs.deepseek.com/api/create-chat-completion",
+      "verified_at": "2026-09-30"
+    },
+    {
+      "name": "Google Gemini API documentation",
+      "url": "https://ai.google.dev/api/generate-content",
+      "verified_at": "2026-09-30"
+    },
+    {
+      "name": "Mistral API documentation",
+      "url": "https://docs.mistral.ai/api/",
+      "verified_at": "2026-09-30"
+    },
+    {
+      "name": "OpenAI API protocol documentation",
+      "url": "https://platform.openai.com/docs/api-reference/chat/create",
+      "verified_at": "2026-09-30"
+    },
+    {
+      "name": "OpenAI Responses API documentation",
+      "url": "https://platform.openai.com/docs/api-reference/responses/create",
+      "verified_at": "2026-09-30"
+    },
+    {
+      "name": "OpenCode provider documentation",
+      "url": "https://opencode.ai/docs/providers/",
+      "verified_at": "2026-09-30"
+    },
+    {
+      "name": "OpenRouter API documentation",
+      "url": "https://openrouter.ai/docs/api-reference/overview",
+      "verified_at": "2026-09-30"
+    },
+    {
+      "name": "Pi provider documentation",
+      "url": "https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/docs",
+      "verified_at": "2026-09-30"
+    },
+    {
+      "name": "Z.ai API documentation",
+      "url": "https://docs.z.ai/api-reference/llm/chat-completion",
+      "verified_at": "2026-09-30"
+    }
+  ],
+  "performance": {
+    "catalog_routes": 9329,
+    "measurement": "Single-process local SQLite; cold cache computes route compatibility and warm cache reuses digest-keyed result; one run per case. Milliseconds. Candidate scanning now uses indexed offering_id keyset pages rather than repeated large OFFSET sorts.",
+    "cases": [
+      {
+        "query": "harness=opencode",
+        "matches": 614,
+        "cold_ms": 121.02,
+        "warm_ms": 20.03
+      },
+      {
+        "query": "harness=hermes",
+        "matches": 593,
+        "cold_ms": 113.95,
+        "warm_ms": 19.28
+      },
+      {
+        "query": "harness=codex-cli",
+        "matches": 506,
+        "cold_ms": 99.76,
+        "warm_ms": 16.14
+      },
+      {
+        "query": "workflow=unreal-engine",
+        "matches": 752,
+        "cold_ms": 1249.2,
+        "warm_ms": 26.07
+      },
+      {
+        "query": "workflow=unreal-engine+tools+mcp",
+        "matches": 614,
+        "cold_ms": 132.15,
+        "warm_ms": 22.16
+      },
+      {
+        "query": "free+tools+harness",
+        "matches": 31,
+        "cold_ms": 10.19,
+        "warm_ms": 1.66
+      },
+      {
+        "query": "context=1M+harness",
+        "matches": 219,
+        "cold_ms": 44.3,
+        "warm_ms": 6.89
+      }
+    ]
+  },
+  "manual_combinations": [
+    {
+      "harness": "Codex CLI",
+      "provider": "OpenAI",
+      "expected": "COMPATIBLE; OPENAI_RESPONSES",
+      "actual": "COMPATIBLE; OPENAI_RESPONSES"
+    },
+    {
+      "harness": "Codex CLI",
+      "provider": "OpenRouter",
+      "expected": "existing OpenRouter derivation retained",
+      "actual": "COMPATIBLE_WITH_CONFIGURATION"
+    },
+    {
+      "harness": "Codex CLI",
+      "provider": "DeepSeek chat-completions endpoint",
+      "expected": "UNKNOWN because Codex custom mode requires Responses",
+      "actual": "UNKNOWN"
+    },
+    {
+      "harness": "OpenCode",
+      "provider": "OpenAI",
+      "actual": "COMPATIBLE; OPENAI_CHAT_COMPLETIONS"
+    },
+    {
+      "harness": "OpenCode",
+      "provider": "Anthropic",
+      "actual": "COMPATIBLE; ANTHROPIC_MESSAGES"
+    },
+    {
+      "harness": "OpenCode",
+      "provider": "OpenRouter",
+      "actual": "COMPATIBLE_WITH_CONFIGURATION"
+    },
+    {
+      "harness": "OpenCode",
+      "provider": "Z.ai",
+      "actual": "COMPATIBLE; OPENAI_CHAT_COMPLETIONS"
+    },
+    {
+      "harness": "OpenCode",
+      "provider": "DeepSeek",
+      "actual": "COMPATIBLE; OPENAI_CHAT_COMPLETIONS"
+    },
+    {
+      "harness": "Hermes Agent",
+      "provider": "OpenRouter",
+      "actual": "COMPATIBLE_WITH_CONFIGURATION"
+    },
+    {
+      "harness": "Hermes Agent",
+      "provider": "Z.ai",
+      "actual": "COMPATIBLE; OPENAI_CHAT_COMPLETIONS"
+    },
+    {
+      "harness": "Hermes Agent",
+      "provider": "DeepSeek",
+      "actual": "COMPATIBLE; OPENAI_CHAT_COMPLETIONS"
+    },
+    {
+      "harness": "Pi",
+      "provider": "OpenRouter",
+      "actual": "COMPATIBLE_WITH_CONFIGURATION"
+    },
+    {
+      "harness": "Pi",
+      "provider": "Mistral",
+      "actual": "COMPATIBLE; MISTRAL_CONVERSATIONS"
+    },
+    {
+      "harness": "Pi",
+      "provider": "Google",
+      "actual": "COMPATIBLE; GOOGLE_GEMINI_NATIVE"
+    },
+    {
+      "harness": "Claude Code",
+      "provider": "Anthropic native Claude model",
+      "actual": "COMPATIBLE; ANTHROPIC_MESSAGES"
+    },
+    {
+      "harness": "Claude Code",
+      "provider": "OpenRouter Claude model",
+      "actual": "COMPATIBLE_WITH_CONFIGURATION"
+    },
+    {
+      "harness": "Claude Code",
+      "provider": "OpenRouter GLM model",
+      "expected": "UNKNOWN under Claude model restriction",
+      "actual": "UNKNOWN"
+    },
+    {
+      "harness": "Codex CLI",
+      "workflow": "Unreal Engine MCP + OpenAI route",
+      "actual": "COMPATIBLE_WITH_CONFIGURATION"
+    },
+    {
+      "harness": "OpenCode",
+      "workflow": "Unreal Engine MCP",
+      "actual": "COMPATIBLE_WITH_CONFIGURATION"
+    },
+    {
+      "harness": "Hermes Agent",
+      "workflow": "Unreal Engine MCP + DeepSeek route",
+      "actual": "COMPATIBLE_WITH_CONFIGURATION"
+    },
+    {
+      "harness": "OpenCode",
+      "provider": "Ollama local endpoint",
+      "expected": "UNKNOWN; no catalog route or endpoint protocol evidence exists",
+      "actual": "UNKNOWN / route absent"
+    }
+  ]
+}

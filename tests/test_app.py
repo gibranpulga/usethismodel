@@ -7,8 +7,9 @@ from xml.etree import ElementTree
 import pytest
 
 from app import create_app
+from app.data_snapshot import apply_snapshot
 from app.db import get_db
-from app.domain import canonical_model, compatibility_for
+from app.domain import canonical_model, compatibility_for, compatible_route_rows
 from app.query import interpret_search, price_history, route_rows
 
 
@@ -34,7 +35,7 @@ def test_database_initializes_all_migrations(app):
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
 
-        assert migrations == [(i,) for i in range(1, 23)]
+        assert migrations == [(i,) for i in range(1, 24)]
     assert {
         "models",
         "providers",
@@ -199,6 +200,88 @@ def test_compatibility_is_fact_derived_and_configuration_aware(app):
     assert "Tool calling: Yes" in result["explanation"]
 
 
+@pytest.mark.parametrize(
+    "harness,provider,protocol",
+    [
+        ("OpenCode", "OpenAI", "OPENAI_CHAT_COMPLETIONS"),
+        ("OpenCode", "Anthropic", "ANTHROPIC_MESSAGES"),
+        ("OpenCode", "DeepSeek", "OPENAI_CHAT_COMPLETIONS"),
+        ("OpenCode", "Z.AI", "OPENAI_CHAT_COMPLETIONS"),
+        ("Pi", "Google", "GOOGLE_GEMINI_NATIVE"),
+        ("Hermes Agent", "DeepSeek", "OPENAI_CHAT_COMPLETIONS"),
+        ("Codex CLI", "OpenAI", "OPENAI_RESPONSES"),
+    ],
+)
+def test_direct_provider_compatibility_requires_matching_protocol_evidence(
+    app, harness, provider, protocol
+):
+    with app.app_context():
+        db = get_db()
+        apply_snapshot(db, Path(__file__).resolve().parents[1] / "data" / "catalog.json")
+        harness_id = db.execute("SELECT id FROM harnesses WHERE name=?", (harness,)).fetchone()[0]
+        offering = db.execute(
+            """SELECT o.id FROM provider_offerings o JOIN providers p ON p.id=o.provider_id
+               WHERE p.name=? AND o.tool_support='YES' AND NOT EXISTS (
+                 SELECT 1 FROM route_compatibility_evidence e
+                 WHERE e.harness_id=? AND e.offering_id=o.id) LIMIT 1""",
+            (provider, harness_id),
+        ).fetchone()
+        assert offering
+        result = compatibility_for(db, harness_id, offering["id"])
+    assert result["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION"}
+    assert result["derived"] is True
+    assert result["protocol_evidence"]["protocol"] == protocol
+    assert result["protocol_evidence"]["provider_source_url"].startswith("https://")
+    assert result["protocol_evidence"]["harness_verified_at"]
+
+
+def test_protocol_mismatch_and_incomplete_evidence_remain_unknown(app):
+    with app.app_context():
+        db = get_db()
+        apply_snapshot(db, Path(__file__).resolve().parents[1] / "data" / "catalog.json")
+        harness_id = db.execute("SELECT id FROM harnesses WHERE name='Codex CLI'").fetchone()[0]
+        offering = db.execute(
+            """SELECT o.id FROM provider_offerings o JOIN providers p ON p.id=o.provider_id
+               WHERE p.name='Anthropic' LIMIT 1"""
+        ).fetchone()
+        result = compatibility_for(db, harness_id, offering["id"])
+    assert result["status"] == "UNKNOWN"
+
+
+def test_public_compatibility_api_exposes_both_protocol_sources(app):
+    with app.app_context():
+        db = get_db()
+        apply_snapshot(db, Path(__file__).resolve().parents[1] / "data" / "catalog.json")
+    response = app.test_client().get(
+        "/api/v1/compatibility?harness=opencode&provider=DeepSeek&limit=1"
+    )
+    assert response.status_code == 200
+    compatibility = response.json["data"][0]["compatibility"]
+    assert compatibility["protocol_evidence"]["protocol"] == "OPENAI_CHAT_COMPLETIONS"
+    assert any("deepseek.com" in source["url"] for source in compatibility["sources"])
+    assert any("opencode.ai" in source["url"] for source in compatibility["sources"])
+
+
+def test_codex_openrouter_and_claude_gateway_model_restrictions(app):
+    with app.app_context():
+        db = get_db()
+        apply_snapshot(db, Path(__file__).resolve().parents[1] / "data" / "catalog.json")
+        codex = db.execute("SELECT id FROM harnesses WHERE name='Codex CLI'").fetchone()[0]
+        claude = db.execute("SELECT id FROM harnesses WHERE name='Claude Code'").fetchone()[0]
+        openrouter = db.execute("SELECT id FROM providers WHERE name='OpenRouter'").fetchone()[0]
+        router_route = db.execute("""SELECT id FROM provider_offerings
+          WHERE provider_id=? AND api_model_id='z-ai/glm-5.3'""", (openrouter,)).fetchone()
+        codex_result = compatibility_for(db, codex, router_route["id"])
+        claude_result = compatibility_for(db, claude, router_route["id"])
+        native_claude_route = db.execute("""SELECT o.id FROM provider_offerings o
+          JOIN providers p ON p.id=o.provider_id JOIN models m ON m.id=o.model_id
+          WHERE p.name='Anthropic' AND lower(m.canonical_name) LIKE '%claude%' LIMIT 1""").fetchone()
+        native_claude = compatibility_for(db, claude, native_claude_route["id"])
+    assert codex_result["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION"}
+    assert claude_result["status"] == "UNKNOWN"
+    assert native_claude["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION"}
+
+
 def test_unknown_and_provider_specific_override(app):
     with app.app_context():
         db = get_db()
@@ -275,6 +358,29 @@ def test_harness_profiles_expose_sources_and_access_methods(client):
     assert b"Openrouter" in response.data
     assert b"Streamable Http" in response.data
     assert b"verified 2026-09-29" in response.data
+
+
+def test_harness_detail_qualifies_beyond_default_route_page(app):
+    with app.app_context():
+        db = get_db()
+        apply_snapshot(db, Path(__file__).resolve().parents[1] / "data" / "catalog.json")
+        harness_id = db.execute("SELECT id FROM harnesses WHERE name='OpenCode'").fetchone()[0]
+        default_ids = {route["offering_id"] for route in route_rows(db, {})}
+        qualified = compatible_route_rows(db, {}, harness_id)
+        display_order = sorted(qualified, key=lambda route: (
+            not bool(route["_compatibility"].get("source")),
+            route.get("input_price") is None,
+            route.get("input_price") or 0,
+            route.get("canonical_name", ""),
+            route.get("provider_name", ""),
+        ))[:24]
+        displayed_from_beyond_default = next(
+            route for route in display_order if route["offering_id"] not in default_ids
+        )
+        client = app.test_client()
+        response = client.get("/harnesses/opencode")
+    assert response.status_code == 200
+    assert displayed_from_beyond_default["api_model_id"].encode() in response.data
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,19 @@
+[
+{"access_method":"NATIVE_PROVIDER","harness_id":3,"id":1,"note":"Built-in provider SDK support.","protocol":"OPENAI_CHAT_COMPLETIONS","source_id":46,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"NATIVE_PROVIDER","harness_id":3,"id":2,"note":"OpenAI provider supports the Responses API.","protocol":"OPENAI_RESPONSES","source_id":46,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"NATIVE_PROVIDER","harness_id":3,"id":3,"note":"Built-in Anthropic provider.","protocol":"ANTHROPIC_MESSAGES","source_id":46,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"CUSTOM_OPENAI_COMPATIBLE","harness_id":3,"id":4,"note":"Custom OpenAI-compatible provider configuration.","protocol":"OPENAI_CHAT_COMPLETIONS","source_id":46,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"NATIVE_PROVIDER","harness_id":4,"id":5,"note":"Built-in OpenAI provider.","protocol":"OPENAI_CHAT_COMPLETIONS","source_id":47,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"NATIVE_PROVIDER","harness_id":4,"id":6,"note":"Built-in Responses provider support.","protocol":"OPENAI_RESPONSES","source_id":47,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"NATIVE_PROVIDER","harness_id":4,"id":7,"note":"Built-in Anthropic provider.","protocol":"ANTHROPIC_MESSAGES","source_id":47,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"NATIVE_PROVIDER","harness_id":4,"id":8,"note":"Built-in Google Gemini provider.","protocol":"GOOGLE_GEMINI_NATIVE","source_id":47,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"NATIVE_PROVIDER","harness_id":4,"id":9,"note":"Built-in Mistral provider uses the Mistral Conversations API.","protocol":"MISTRAL_CONVERSATIONS","source_id":47,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"CUSTOM_OPENAI_COMPATIBLE","harness_id":4,"id":10,"note":"Custom models can select OpenAI Completions transport.","protocol":"OPENAI_CHAT_COMPLETIONS","source_id":47,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"CUSTOM_ANTHROPIC_COMPATIBLE","harness_id":4,"id":11,"note":"Custom models can select Anthropic Messages transport.","protocol":"ANTHROPIC_MESSAGES","source_id":47,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"NATIVE_PROVIDER","harness_id":14,"id":12,"note":"Provider profiles and custom provider use the OpenAI-compatible chat transport.","protocol":"OPENAI_CHAT_COMPLETIONS","source_id":56,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"CUSTOM_OPENAI_COMPATIBLE","harness_id":14,"id":13,"note":"Custom provider profile accepts a base URL and OpenAI-compatible chat transport.","protocol":"OPENAI_CHAT_COMPLETIONS","source_id":56,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"NATIVE_PROVIDER","harness_id":2,"id":14,"note":"Native Anthropic Messages support. Third-party gateways require Anthropic-format behavior and compatible Claude model IDs.","protocol":"ANTHROPIC_MESSAGES","source_id":45,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"CUSTOM_ANTHROPIC_COMPATIBLE","harness_id":2,"id":15,"note":"Anthropic-format gateway mode is documented, with model and feature compatibility restrictions.","protocol":"ANTHROPIC_MESSAGES","source_id":45,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"NATIVE_PROVIDER","harness_id":1,"id":16,"note":"Codex native API path uses the Responses protocol.","protocol":"OPENAI_RESPONSES","source_id":44,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"CUSTOM_OPENAI_COMPATIBLE","harness_id":1,"id":17,"note":"Custom provider mode requires a Responses-compatible endpoint; generic Chat Completions is insufficient.","protocol":"OPENAI_RESPONSES","source_id":44,"state":"YES","verified_at":"2026-09-30"}
+]
