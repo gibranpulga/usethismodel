@@ -1,10 +1,10 @@
 const root = document.documentElement;
 const saved = localStorage.getItem('utm-theme');
-if (saved) root.dataset.theme = saved;
+if (saved === 'light' || saved === 'dark') root.dataset.theme = saved;
 const toggle = document.getElementById('theme-toggle');
 const updatePressed = () => toggle?.setAttribute('aria-pressed', String(root.dataset.theme === 'dark'));
 updatePressed();
-document.getElementById('theme-toggle')?.addEventListener('click', () => {
+toggle?.addEventListener('click', () => {
   root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
   localStorage.setItem('utm-theme', root.dataset.theme);
   updatePressed();

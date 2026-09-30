@@ -1,5 +1,5 @@
 <form class="filter-form" method="get" action="{{ action or '/models' }}">
-  <div class="filter-search"><input name="q" value="{{ filters.get('q','') }}" placeholder="Try “cheap coding”, “GLM 5.3”, “OpenCode Unreal MCP”…" aria-label="Search models and routes"><button class="button" type="submit">Show choices</button></div>
+  <div class="filter-search"><input id="model-search" name="q" value="{{ filters.get('q','') }}" placeholder="Try “cheap coding”, “GLM 5.3”, “OpenCode Unreal MCP”…" aria-label="Search models and routes"><button class="button" type="submit">Show choices</button></div>
   {% if interpreted %}<div class="active-filters" aria-label="Interpreted search filters"><span>Understood as:</span>{% for item in interpreted %}<span class="filter-chip">{{ item }}</span>{% endfor %}</div>{% endif %}
   <div class="filter-grid decision-filters">
     {% if action == '/compatibility' %}<label>Workflow<select name="workflow"><option value="">Any workflow</option>{% for workflow in options.workflows %}<option value="{{ workflow.slug }}" {% if filters.get('workflow') in [workflow.slug,workflow.name] %}selected{% endif %}>{{ workflow.name }}</option>{% endfor %}</select></label>{% endif %}

@@ -267,6 +267,15 @@ def create_app(test_config=None):
         popular = rows("""SELECT m.id,m.canonical_name,m.canonical_slug,COUNT(o.id) route_count
           FROM models m JOIN provider_offerings o ON o.model_id=m.id GROUP BY m.id
           ORDER BY route_count DESC,m.canonical_name LIMIT 3""")
+        def offer_rank(offer):
+            kind = (offer.get("offer_type") or "").lower().replace("_", " ")
+            free_route = kind in {"$0 route", "free", "free route"}
+            try:
+                discount = float(offer.get("discount_percent") or 0)
+            except (TypeError, ValueError):
+                discount = 0
+            return (free_route, discount, offer.get("last_verified_at") or "")
+
         changes = rows("""SELECT o.id offering_id,m.canonical_name,p.name provider_name,pr.price_type,
           pr.amount,pr.unit,pr.valid_from FROM pricing_records pr
           JOIN provider_offerings o ON o.id=pr.offering_id JOIN models m ON m.id=o.model_id
@@ -277,7 +286,7 @@ def create_app(test_config=None):
         return render_template(
             "index.html", title="AI model, provider route & harness finder", filters=filters,
             interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters)[:6],
-            deals=offer_rows(db())[:4], latest=latest, popular=popular,
+            deals=sorted(offer_rows(db()), key=offer_rank, reverse=True)[:4], latest=latest, popular=popular,
             coding=route_rows(db(), {"tools": "1", "use_case": "coding", "sort": "value", "limit": 3}),
             home_harnesses=rows("SELECT id,name,interfaces,supports_mcp FROM harnesses WHERE name IN ('Hermes Agent','Codex CLI','OpenCode','Pi') ORDER BY name"),
             media_routes=route_rows(db(), {"type": "3D generation", "limit": 3}), changes=changes[:3],
