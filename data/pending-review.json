@@ -6528,6 +6528,22 @@
     "triage_class": null
   },
   {
+    "id": "2f1364d1f16b04c1a7d39954",
+    "entity": "provider:Xai",
+    "proposed_change": "canonical_lab",
+    "current_value": "\"Xai and SpaceXai names coexist\"",
+    "proposed_value": "\"SpaceXAI is current official brand; review aliases without merging historic records\"",
+    "sources": "[\"https://x.ai/company\",\"https://x.ai/legal/terms-of-service\"]",
+    "evidence": "SpaceXAI company page and current consumer terms use SpaceXAI. Preserve source history; no merge on brand evidence alone.",
+    "confidence": "HIGH",
+    "reason": "Official sources confirm current SpaceXAI branding, but model-era attribution and lab aliasing should be reviewed before canonicalizing records. No fuzzy merge.",
+    "status": "PENDING",
+    "created_at": "2026-09-30",
+    "resolved_at": null,
+    "resolution_note": null,
+    "triage_class": null
+  },
+  {
     "id": "2f676b6ae2800a075dc10282",
     "entity": "offering:8988",
     "proposed_change": "max_output_tokens",
@@ -8939,6 +8955,22 @@
     "reason": "Conflicting values within one source; retained previous value",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00",
+    "resolved_at": null,
+    "resolution_note": null,
+    "triage_class": null
+  },
+  {
+    "id": "429fc6135a8f253b1c7f4326",
+    "entity": "provider:OpenCode",
+    "proposed_change": "plan_classification",
+    "current_value": "\"OpenCode Go only\"",
+    "proposed_value": "\"OpenCode Zen pay-as-you-go balance/top-up account; determine whether this belongs in plans or provider access\"",
+    "sources": "[\"https://dev.opencode.ai/docs/zen\",\"https://opencode.ai/zen\"]",
+    "evidence": "Separate product from Go subscription; classify balance/top-up semantics before adding a plan row.",
+    "confidence": "HIGH",
+    "reason": "Official Zen docs show pay-as-you-go token prices, a suggested $20 top-up, and optional auto-reload; this is not a recurring subscription.",
+    "status": "PENDING",
+    "created_at": "2026-09-30",
     "resolved_at": null,
     "resolution_note": null,
     "triage_class": null
@@ -25531,6 +25563,22 @@
     "reason": "Conflicting values within one source; retained previous value",
     "status": "PENDING",
     "created_at": "2026-09-29T15:55:41+00:00",
+    "resolved_at": null,
+    "resolution_note": null,
+    "triage_class": null
+  },
+  {
+    "id": "c69e65df6abcb98a118843a0",
+    "entity": "provider:Z.ai",
+    "proposed_change": "campaign_classification",
+    "current_value": "\"No verified coding-plan campaign offer\"",
+    "proposed_value": "\"GLM-5.3-Flash campaign: paid plans, ZCode/AutoClaw, 23:00–09:00 daily, 2026-09-03 through 2026-10-07\"",
+    "sources": "[\"https://docs.z.ai/devpack/overview\"]",
+    "evidence": "The campaign is plan quota, not a direct API token-price change; end date is explicit.",
+    "confidence": "HIGH",
+    "reason": "Official plan page describes an eligibility- and time-window-limited quota campaign. Determine offer entity and eligible harness/provider scope; do not change public API token pricing.",
+    "status": "PENDING",
+    "created_at": "2026-09-30",
     "resolved_at": null,
     "resolution_note": null,
     "triage_class": null

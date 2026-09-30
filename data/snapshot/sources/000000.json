@@ -72,5 +72,13 @@
 {"fetched_at":"2026-09-29","id":71,"name":"Kimi Code membership guide","reliability":"HIGH","source_type":"official documentation","url":"https://www.kimi.com/en/help/kimi-code/membership-guide"},
 {"fetched_at":"2026-09-29","id":72,"name":"DeepSeek API pricing","reliability":"HIGH","source_type":"official pricing","url":"https://api-docs.deepseek.com/quick_start/pricing/"},
 {"fetched_at":"2026-09-29","id":73,"name":"OpenCode Go","reliability":"HIGH","source_type":"official documentation","url":"https://dev.opencode.ai/docs/go/"},
-{"fetched_at":"2026-09-29","id":74,"name":"OpenCode Zen","reliability":"HIGH","source_type":"official pricing","url":"https://dev.opencode.ai/docs/zen"}
+{"fetched_at":"2026-09-29","id":74,"name":"OpenCode Zen","reliability":"HIGH","source_type":"official pricing","url":"https://dev.opencode.ai/docs/zen"},
+{"fetched_at":"2026-09-30","id":75,"name":"Cursor CLI official documentation","reliability":"HIGH","source_type":"official_documentation","url":"https://docs.cursor.com/en/cli/overview"},
+{"fetched_at":"2026-09-30","id":76,"name":"Junie CLI official documentation","reliability":"HIGH","source_type":"official_documentation","url":"https://junie.jetbrains.com/docs/junie-cli.html"},
+{"fetched_at":"2026-09-30","id":77,"name":"Amp official documentation","reliability":"HIGH","source_type":"official_documentation","url":"https://ampcode.com/docs/customize/model-routing"},
+{"fetched_at":"2026-09-30","id":78,"name":"Factory Droid official documentation","reliability":"HIGH","source_type":"official_documentation","url":"https://docs.factory.ai/model-independence/byok"},
+{"fetched_at":"2026-09-30","id":79,"name":"Goose AAIF governance","reliability":"HIGH","source_type":"official_governance","url":"https://github.com/aaif-goose/goose/blob/main/GOVERNANCE.md"},
+{"fetched_at":"2026-09-30","id":80,"name":"Cursor acquisition announcement","reliability":"HIGH","source_type":"official_announcement","url":"https://cursor.com/blog/joining-spacex"},
+{"fetched_at":"2026-09-30","id":81,"name":"OpenAI About ChatGPT Pro tiers","reliability":"HIGH","source_type":"official_support","url":"https://help.openai.com/en/articles/9793128-what-is-chatgpt-pro"},
+{"fetched_at":"2026-09-30","id":82,"name":"SpaceXAI company information","reliability":"HIGH","source_type":"official_company","url":"https://x.ai/company"}
 ]

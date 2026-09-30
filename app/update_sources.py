@@ -111,12 +111,20 @@ def _vision(modalities):
     return None
 
 
-def _canonical(provider, api_id, explicit=None):
+def _canonical(provider, api_id, explicit=None, strip_openrouter_modifier=False):
+    # OpenRouter suffixes below alter routing/access behavior, not model identity.
+    normalized = api_id
+    modifiers = (":batch", ":free", ":floor", ":nitro", ":online") if strip_openrouter_modifier else ()
+    for modifier in modifiers:
+        normalized = normalized.removesuffix(modifier)
     if explicit:
-        return _identifier(explicit, "canonical model ID")
+        explicit = _identifier(explicit, "canonical model ID")
+        for modifier in modifiers:
+            explicit = explicit.removesuffix(modifier)
+        return explicit
     # A vendor-qualified model ID remains canonical across gateways. Only an
     # unqualified ID is provider-scoped. No case/date stripping or fuzzy merge.
-    return api_id if "/" in api_id else f"{provider}/{api_id}"
+    return normalized if "/" in normalized else f"{provider}/{normalized}"
 
 
 def _record(source, url, kind, priority, provider, provider_name, api_id, canonical, name, fields, explicit_canonical=None):
@@ -215,7 +223,7 @@ def parse_openrouter(payload):
                 "openrouter",
                 "OpenRouter",
                 api_id,
-                (item.get("canonical_slug") or api_id).removesuffix(":batch").removesuffix(":free"),
+                _canonical("openrouter", item.get("canonical_slug") or api_id, strip_openrouter_modifier=True),
                 item.get("name") or api_id,
                 fields,
             )
@@ -256,7 +264,7 @@ def parse_litellm(payload):
                 provider,
                 name,
                 api_id,
-                _canonical(provider, api_id).removesuffix(":batch").removesuffix(":free"),
+                _canonical(provider, api_id, strip_openrouter_modifier=provider == "openrouter"),
                 api_id,
                 fields,
             )

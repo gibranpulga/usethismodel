@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta, timezone
+from hashlib import sha256
 from xml.sax.saxutils import escape
 
-from flask import Blueprint, Response, abort, current_app, jsonify, request, url_for
+from flask import Blueprint, Response, abort, current_app, jsonify, make_response, request, url_for
 
 from .db import get_db
 from .domain import compatibility_for
 from .query import (
     access_route_rows,
+    modality_category,
     normalize_context,
     offer_rows,
-    openrouter_free_rows,
     plan_rows,
     route_rows,
 )
@@ -46,6 +47,53 @@ def _envelope(data, **meta):
     return jsonify({"data": data, "meta": {"api_version": API_VERSION, "count": count, **meta}})
 
 
+def _api_page(items, args=None):
+    """Apply the v1 offset pagination contract to a complete matching list."""
+    args = args or request.args
+    try:
+        limit = int(args.get("limit", 100))
+        if limit < 1:
+            raise ValueError
+        limit = min(250, limit)
+        if "page" in args and "offset" in args:
+            raise ValueError
+        if "page" in args:
+            page = int(args["page"])
+            if page < 1:
+                raise ValueError
+            offset = (page - 1) * limit
+        else:
+            offset = int(args.get("offset", 0))
+            if offset < 0:
+                raise ValueError
+    except (TypeError, ValueError):
+        return None, ({"error": {"code": "invalid_pagination", "message":
+                "Use limit=1..250 with either a positive 1-based page or a non-negative offset."}}, 400)
+    total = len(items)
+    data = items[offset:offset + limit]
+    next_offset = offset + limit if offset + len(data) < total else None
+    previous_offset = max(0, offset - limit) if offset else None
+    return (data, {"total": total, "limit": limit, "offset": offset,
+                   "next_offset": next_offset, "previous_offset": previous_offset,
+                   "has_more": next_offset is not None}), None
+
+
+def _paged_envelope(items, **meta):
+    page, error = _api_page(items)
+    if error:
+        return jsonify(error[0]), error[1]
+    data, pagination = page
+    response = _envelope(data, **pagination, **meta)
+    response.set_etag(sha256(response.get_data()).hexdigest(), weak=False)
+    response.headers.setdefault("Cache-Control", "public, max-age=60, stale-while-revalidate=30")
+    return response.make_conditional(request)
+
+
+def _unpaged_args():
+    return {key: value for key, value in request.args.items()
+            if key not in {"limit", "offset", "page"}}
+
+
 def _source(row):
     return ({"name": row["source_name"], "url": row["source_url"]}
             if row.get("source_url") else None)
@@ -60,7 +108,8 @@ def _route_json(row, compatibility=None):
         "id": row["offering_id"],
         "api_model_id": row["api_model_id"],
         "model": {"id": row["model_id"], "name": row["canonical_name"],
-                  "slug": row["canonical_slug"], "type": row["modality"],
+                  "slug": row["canonical_slug"], "type": modality_category(row["modality"], row["canonical_name"]),
+                  "modality_category": modality_category(row["modality"], row["canonical_name"]), "raw_modality": row["modality"],
                   "open_weights": bool(row["open_weights"]), "status": row["status"],
                   "release_date": row["released_at"], "identity_kind": row["identity_kind"]},
         "provider": {"id": row["provider_id"], "name": row["provider_name"],
@@ -161,7 +210,7 @@ def filtered_routes(args):
             return [], filters
     route_filters = {key: value for key, value in filters.items() if key != "workflow"}
     try:
-        requested_limit = min(250, max(1, int(filters.get("limit", 100))))
+        requested_limit = min(100_000, max(1, int(filters.get("limit", 100))))
     except (TypeError, ValueError):
         requested_limit = 100
     try:
@@ -170,7 +219,7 @@ def filtered_routes(args):
         requested_offset = 0
     needs_compatibility = bool(harness or route_filters.get("mcp") == "1" or workflow)
     try:
-        candidates = route_rows(get_db(), {**route_filters, "limit": 10_000, "offset": 0}
+        candidates = route_rows(get_db(), {**route_filters, "limit": 100_000, "offset": 0}
                                 if needs_compatibility else
                                 {**route_filters, "limit": requested_limit, "offset": requested_offset})
     except ValueError as exc:
@@ -204,7 +253,7 @@ def api_index():
         "name": "UseThisModel public read-only API",
         "documentation": absolute_url(url_for("public.api_docs")),
         "openapi": absolute_url(url_for("public.openapi_spec")),
-        "response": {"data": "resource or list", "meta": {"api_version": "v1", "count": "integer"}},
+        "response": {"data": "resource or list", "meta": {"api_version": "v1", "count": "page size", "total": "matching records", "limit": 100, "offset": 0, "next_offset": "integer or null", "has_more": "boolean"}},
         "endpoints": ["models", "models/{canonical-slug}", "providers", "plans", "access-routes", "harnesses", "workflows",
                       "offers", "free-routes", "releases", "benchmarks", "compatibility", "search"],
     })
@@ -215,7 +264,7 @@ def api_docs():
     canonical = absolute_url("/api")
     body = """<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width'>
 <meta name=description content="Read-only, source-backed UseThisModel API for AI models, provider routes, prices, offers, benchmarks, and harness compatibility."><meta name=robots content="index,follow"><link rel=canonical href="__CANONICAL__"><title>Public API — UseThisModel</title></head><body><nav aria-label="Site"><a href=/>UseThisModel</a> · <a href=/models>Models</a> · <a href=/providers>Providers</a> · <a href=/harnesses>Harnesses</a></nav><main><h1>UseThisModel public API v1</h1>
-<p>All endpoints are read-only JSON. Responses use <code>{&quot;data&quot;: …, &quot;meta&quot;: {&quot;api_version&quot;: &quot;v1&quot;, &quot;count&quot;: …}}</code>. Unknown values remain null or the explicit tri-state <code>UNKNOWN</code>.</p>
+<p>All endpoints are read-only JSON. Collections accept <code>limit</code> (default 100, maximum 250) and either 1-based <code>page</code> or zero-based <code>offset</code>. Do not combine page and offset. Metadata <code>count</code> is this page’s size; <code>total</code> is the total matching records; <code>next_offset</code> is null at the end; <code>has_more</code> states whether another page exists. Oversized limits are capped; malformed pagination is rejected with HTTP 400. Unfiltered machine collections include their full catalog, regardless of featured web subsets.</p>
 <h2>Resources</h2><ul><li><code>GET /api/v1/models</code> and <code>/api/v1/models/{canonical-slug}</code></li><li><code>GET /api/v1/providers</code></li><li><code>GET /api/v1/harnesses</code></li><li><code>GET /api/v1/offers?status=current</code></li><li><code>GET /api/v1/free-routes?tools=true</code></li><li><code>GET /api/v1/releases?window=7-days</code></li><li><code>GET /api/v1/benchmarks</code></li><li><code>GET /api/v1/compatibility?harness=hermes-agent&amp;mcp=true</code></li><li><code>GET /api/v1/search?q=coding</code></li></ul>
 <h2>Model and search filters</h2><p><code>tools=true</code>, <code>max_output_price=1</code>, <code>harness=hermes-agent</code>, <code>mcp=true</code>, <code>offers=current</code>, <code>releases=7-days</code>, <code>type=3d</code>, <code>provider=OpenRouter</code>, <code>min_context=1000000</code>, <code>free=true</code>, <code>open_weights=true</code>, and <code>limit=100</code> can be combined. Prices are USD per million tokens unless a media price includes a native unit.</p>
 <p><a href=/api/v1/openapi.json>OpenAPI 3.1 description</a> · <a href=/api/v1>Machine-readable API index</a> · <a href=/>UseThisModel</a></p></main></body></html>"""
@@ -235,6 +284,12 @@ def openapi_spec():
              "schema": {"type": "string"}}
             for argument in sorted(rule.arguments)
         ]
+        if rule.rule.startswith("/api/v1/") and "<" not in rule.rule:
+            parameters.extend([
+                {"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":250,"default":100}},
+                {"name":"page","in":"query","schema":{"type":"integer","minimum":1},"description":"1-based; mutually exclusive with offset."},
+                {"name":"offset","in":"query","schema":{"type":"integer","minimum":0},"description":"Zero-based; mutually exclusive with page."},
+            ])
         paths[path] = {"get": {
             "operationId": rule.endpoint.replace(".", "_"),
             "summary": (current_app.view_functions[rule.endpoint].__doc__ or
@@ -253,17 +308,31 @@ def openapi_spec():
 
 @public.get("/api/v1/models")
 def api_models():
-    routes, filters = filtered_routes(request.args)
+    public_filters = _unpaged_args()
+    filters_in = dict(public_filters)
+    filters_in.update(limit=100000, offset=0)
+    routes, filters = filtered_routes(filters_in)
     grouped = {}
     for route in routes:
         model = grouped.setdefault(route["model_id"], {
             "id": route["model_id"], "name": route["canonical_name"],
             "slug": route["canonical_slug"], "lab": route["lab_name"],
-            "type": route["modality"], "open_weights": bool(route["open_weights"]),
+            "type": modality_category(route["modality"], route["canonical_name"]),
+            "modality_category": modality_category(route["modality"], route["canonical_name"]), "raw_modality": route["modality"],
+            "open_weights": bool(route["open_weights"]),
             "status": route["status"], "release_date": route["released_at"],
             "identity_kind": route["identity_kind"], "routes": []})
         model["routes"].append(_route_json(route, route.get("_compatibility")))
-    return _envelope(list(grouped.values()), filters=filters)
+    if not public_filters:
+        for row in get_db().execute("""SELECT m.id,m.canonical_name name,m.canonical_slug slug,
+          COALESCE(l.name,m.vendor) lab,m.modality,m.open_weights,m.status,m.released_at,m.identity_kind
+          FROM models m LEFT JOIN labs l ON l.id=m.lab_id ORDER BY m.canonical_name"""):
+            grouped.setdefault(row["id"], {"id":row["id"],"name":row["name"],"slug":row["slug"],
+              "lab":row["lab"],"type":modality_category(row["modality"],row["name"]),
+              "modality_category":modality_category(row["modality"],row["name"]),"raw_modality":row["modality"],
+              "open_weights":bool(row["open_weights"]),"status":row["status"],
+              "release_date":row["released_at"],"identity_kind":row["identity_kind"],"routes":[]})
+    return _paged_envelope(list(grouped.values()), filters=filters)
 
 
 @public.get("/api/v1/models/<path:slug>")
@@ -271,10 +340,11 @@ def api_model(slug):
     row = get_db().execute("SELECT id FROM models WHERE canonical_slug=?", (slug,)).fetchone()
     if not row:
         abort(404)
-    routes = route_rows(get_db(), {"model_id": row["id"], "limit": 1000})
+    routes = route_rows(get_db(), {"model_id": row["id"], "limit": 100000})
     first = routes[0] if routes else get_db().execute("SELECT * FROM models WHERE id=?", (row["id"],)).fetchone()
     model = {"id": row["id"], "name": first["canonical_name"], "slug": first["canonical_slug"],
-             "type": first["modality"], "open_weights": bool(first["open_weights"]),
+             "type": modality_category(first["modality"]), "modality_category": modality_category(first["modality"]),
+             "raw_modality": first["modality"], "open_weights": bool(first["open_weights"]),
              "status": first["status"], "release_date": first["released_at"],
              "identity_kind": first["identity_kind"],
              "routes": [_route_json(route) for route in routes]}
@@ -290,21 +360,21 @@ def api_providers():
       WHERE p.canonical_provider_id IS NULL GROUP BY p.id ORDER BY p.name""")]
     for row in records:
         row["slug"] = slugify(row["name"])
-    return _envelope(records)
+    return _paged_envelope(records)
 
 
 @public.get("/api/v1/plans")
 def api_plans():
-    filters = normalized_filters(request.args)
+    filters = normalized_filters(_unpaged_args())
     for key in ("coding", "api", "subscription"):
         if key in filters:
             filters[key] = "1" if _truth(filters[key]) else "0"
-    return _envelope(plan_rows(get_db(), filters), filters=filters)
+    return _paged_envelope(plan_rows(get_db(), filters), filters=filters)
 
 
 @public.get("/api/v1/access-routes")
 def api_access_routes():
-    return _envelope(access_route_rows(get_db()))
+    return _paged_envelope(access_route_rows(get_db()))
 
 
 @public.get("/api/v1/harnesses")
@@ -330,7 +400,7 @@ def api_harnesses():
                LEFT JOIN documentation_monitor_state dm ON dm.source_id=ha.source_id
                WHERE ha.harness_id=? ORDER BY ha.access_method""", (row["id"],))]
         data.append(item)
-    return _envelope(data)
+    return _paged_envelope(data)
 
 
 @public.get("/api/v1/workflows")
@@ -346,34 +416,58 @@ def api_workflows():
               FROM workflow_integrations wi LEFT JOIN documentation_monitor_state dm ON dm.source_id=wi.source_id
               WHERE wi.workflow_id=? ORDER BY wi.name""", (row["id"],))]
         data.append(item)
-    return _envelope(data)
+    return _paged_envelope(data)
 
 
 @public.get("/api/v1/offers")
 def api_offers():
     include_expired = request.args.get("status") not in {None, "current", "active"}
-    return _envelope(offer_rows(get_db(), include_expired=include_expired),
+    return _paged_envelope(offer_rows(get_db(), include_expired=include_expired),
                      status="all" if include_expired else "current")
 
 
 @public.get("/api/v1/free-routes")
 def api_free_routes():
     tools_only = _truth(request.args.get("tools"))
-    return _envelope(openrouter_free_rows(get_db(), tools_only), provider="OpenRouter", tools=tools_only)
+    filters = _unpaged_args()
+    filters.pop("tools", None)
+    filters["free"] = "1"
+    provider_name = request.args.get("provider")
+    if provider_name and not get_db().execute(
+            "SELECT 1 FROM providers WHERE lower(name)=lower(?) AND canonical_provider_id IS NULL", (provider_name,)).fetchone():
+        return jsonify({"error": {"code": "invalid_provider", "message": "Unknown provider filter."}}), 400
+    if tools_only:
+        filters["tools"] = "1"
+    try:
+        routes = route_rows(get_db(), {**filters, "limit": 100000, "offset": 0})
+    except ValueError as exc:
+        return jsonify({"error": {"code": "invalid_filter", "message": str(exc)}}), 400
+    return _paged_envelope([_route_json(row) for row in routes],
+                           provider=request.args.get("provider"), tools=tools_only,
+                           definition="Public free API/free-tier routes only; subscription-included routes are excluded.")
 
 
 @public.get("/api/v1/releases")
 def api_releases():
     window = request.args.get("window", "7-days")
-    days = 7
-    match = re.fullmatch(r"(\d+)-days", window)
-    if match:
-        days = min(365, max(1, int(match.group(1))))
-    since = (date.today() - timedelta(days=days)).isoformat()
+    if window == "all":
+        since = None
+    else:
+        match = re.fullmatch(r"(\d+)-days", window)
+        if not match or not 1 <= int(match.group(1)) <= 365:
+            return jsonify({"error":{"code":"invalid_window","message":"Use window=all or window=<1..365>-days."}}), 400
+        days = int(match.group(1))
+        since = (date.today() - timedelta(days=days)).isoformat()
+    release_where = "released_at IS NOT NULL" + (" AND released_at>=?" if since else "")
+    params = (since,) if since else ()
     data = [dict(row) for row in get_db().execute("""SELECT id,canonical_name name,canonical_slug slug,
-      modality type,released_at release_date,release_date_kind,status FROM models
-      WHERE released_at IS NOT NULL AND released_at>=? ORDER BY released_at DESC,canonical_name""", (since,))]
-    return _envelope(data, window=f"{days}-days", since=since)
+      modality raw_modality,released_at release_date,release_date_kind status_kind,status FROM models
+      WHERE """ + release_where + " ORDER BY released_at DESC,canonical_name", params)]
+    for row in data:
+        row["modality_category"] = row["type"] = modality_category(row["raw_modality"], row["name"])
+        row["release_date_confidence"] = {"official":"Official","publisher_metadata":"Publisher metadata","aggregator":"Aggregator"}.get(row.pop("status_kind"), "Unverified")
+        row["routes_count"] = get_db().execute("SELECT COUNT(*) FROM provider_offerings WHERE model_id=?", (row["id"],)).fetchone()[0]
+    return _paged_envelope(data, window=window, since=since)
 
 
 @public.get("/api/v1/benchmarks")
@@ -390,7 +484,7 @@ def api_benchmarks():
           br.score,br.metric,br.harness_name,br.scaffold,br.reasoning_setting,br.evaluated_at,br.confidence
           FROM benchmark_results br JOIN models m ON m.id=br.model_id WHERE br.benchmark_id=? ORDER BY br.score DESC""", (row["id"],))]
         data.append(item)
-    return _envelope(data)
+    return _paged_envelope(data)
 
 
 @public.get("/api/v1/compatibility")
@@ -398,16 +492,20 @@ def api_compatibility():
     harness = _harness(request.args.get("harness"))
     if not harness:
         return jsonify({"error": {"code": "invalid_harness", "message": "A known harness id, name, or slug is required."}}), 400
-    routes, filters = filtered_routes(request.args)
+    filters_in = _unpaged_args()
+    filters_in.update(limit=100000, offset=0)
+    routes, filters = filtered_routes(filters_in)
     data = [_route_json(row, row.get("_compatibility") or compatibility_for(
         get_db(), harness["id"], row["offering_id"], filters.get("mcp") == "1")) for row in routes]
-    return _envelope(data, harness={"id": harness["id"], "name": harness["name"], "slug": slugify(harness["name"])}, warnings=filters.get("filter_errors", []))
+    return _paged_envelope(data, harness={"id": harness["id"], "name": harness["name"], "slug": slugify(harness["name"])}, warnings=filters.get("filter_errors", []))
 
 
 @public.get("/api/v1/search")
 def api_search():
-    routes, filters = filtered_routes(request.args)
-    return _envelope([_route_json(row, row.get("_compatibility")) for row in routes], filters=filters, warnings=filters.get("filter_errors", []))
+    filters_in = _unpaged_args()
+    filters_in.update(limit=100000, offset=0)
+    routes, filters = filtered_routes(filters_in)
+    return _paged_envelope([_route_json(row, row.get("_compatibility")) for row in routes], filters=filters, warnings=filters.get("filter_errors", []))
 
 
 @public.get("/robots.txt")
@@ -478,7 +576,48 @@ Facts retain their source links, caveats, and last-verified timestamps. Unknown
 values remain unknown rather than being inferred. Prices identify their unit and
 currency; model identity is separate from an exact provider route.
 """
-    return Response(body, mimetype="text/plain")
+    return _conditional_text(body)
+
+
+def _conditional_text(body, mimetype="text/plain"):
+    response = make_response(body)
+    response.mimetype = mimetype
+    response.set_etag(sha256(body.encode("utf-8")).hexdigest(), weak=False)
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=60"
+    return response.make_conditional(request)
+
+
+@public.get("/llms-full.txt")
+def llms_full_txt():
+    db = get_db()
+    root = public_origin()
+    lines = ["# UseThisModel — current catalog overview", "",
+             "Source-backed catalog snapshot. Raw source modality and route details are available in the API.",
+             "Unknown facts remain unknown; pricing and access semantics are route-specific.", "",
+             "## Models with the broadest current route coverage"]
+    models = db.execute("""SELECT m.canonical_name,m.canonical_slug,m.vendor,m.modality,m.released_at,
+      m.release_date_kind,COUNT(o.id) routes FROM models m JOIN provider_offerings o ON o.model_id=m.id
+      WHERE m.status!='DEPRECATED' GROUP BY m.id ORDER BY routes DESC,m.released_at DESC,m.canonical_name LIMIT 100""").fetchall()
+    for row in models:
+        lines.append(f"- [{row['canonical_name']}]({root}/models/{row['canonical_slug']}) — {row['vendor']}; {modality_category(row['modality'], row['canonical_name'])}; {row['routes']} routes; release {row['released_at'] or 'unknown'} ({row['release_date_kind']}).")
+    lines.extend(["", "## Providers"])
+    for row in db.execute("SELECT name,website_url FROM providers WHERE canonical_provider_id IS NULL ORDER BY name LIMIT 50"):
+        lines.append(f"- [{row['name']}]({row['website_url'] or root + '/providers'})")
+    lines.extend(["", "## Harnesses"])
+    for row in db.execute("SELECT name,website_url FROM harnesses ORDER BY name"):
+        lines.append(f"- [{row['name']}]({row['website_url'] or root + '/harnesses'})")
+    lines.extend(["", "## Plans"])
+    for row in db.execute("SELECT pl.name,p.name provider_name,pl.plan_type,pl.monthly_price,pl.currency,s.url source_url FROM plans pl JOIN providers p ON p.id=pl.provider_id LEFT JOIN sources s ON s.id=pl.source_id WHERE pl.status IN ('ACTIVE','LIMITED','WAITLIST') ORDER BY p.name,pl.name LIMIT 40"):
+        price = f"{row['currency'] or 'USD'} {row['monthly_price']}/month" if row['monthly_price'] is not None else "price unverified"
+        lines.append(f"- {row['name']} ({row['provider_name']}; {row['plan_type']}; {price}) — {row['source_url'] or root + '/plans'}")
+    lines.extend(["", "## Current offers"])
+    for row in offer_rows(db)[:50]:
+        lines.append(f"- {row['title']} ({row['provider_name']}; {row['offer_type']}; verified {row['last_verified_at'] or 'unknown'}; ends {row['ends_at'] or 'not published'}) — {row['terms_url'] or root + '/deals'}")
+    lines.extend(["", "## Workflows"])
+    for row in db.execute("SELECT slug,name,description FROM workflows ORDER BY name"):
+        lines.append(f"- [{row['name']}]({root}/workflows/{row['slug']}) — {row['description'] or 'Documented tool workflow.'}")
+    lines.extend(["", "## Machine interfaces", f"- API docs: {root}/api", f"- OpenAPI: {root}/api/v1/openapi.json", f"- MCP: {root}/mcp-info"])
+    return _conditional_text("\n".join(lines) + "\n")
 
 
 @public.get("/sitemap.xml")
@@ -487,14 +626,22 @@ def sitemap():
     groups = ["core", "models", "providers", "harnesses", "use-cases", "workflows"]
     body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">" + "".join(
         f"<sitemap><loc>{root}/sitemaps/{group}.xml</loc></sitemap>" for group in groups) + "</sitemapindex>"
-    return Response(body, mimetype="application/xml")
+    return _conditional_text(body, "application/xml")
 
 
 def _urlset(paths):
     root = public_origin()
-    body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">" + "".join(
-        f"<url><loc>{escape(root + path)}</loc></url>" for path in dict.fromkeys(paths)) + "</urlset>"
-    return Response(body, mimetype="application/xml")
+    items = []
+    seen = set()
+    for item in paths:
+        path, lastmod = item if isinstance(item, tuple) else (item, None)
+        if path in seen:
+            continue
+        seen.add(path)
+        lastmod_xml = f"<lastmod>{escape(str(lastmod)[:10])}</lastmod>" if lastmod else ""
+        items.append(f"<url><loc>{escape(root + path)}</loc>{lastmod_xml}</url>")
+    body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">" + "".join(items) + "</urlset>"
+    return _conditional_text(body, "application/xml")
 
 
 @public.get("/sitemaps/<group>.xml")
@@ -504,12 +651,13 @@ def sitemap_group(group):
         "core": lambda: ["/", "/models", "/providers", "/harnesses", "/workflows", "/benchmarks",
                          "/use-cases", "/deals", "/releases", "/rankings", "/plans", "/api", "/mcp-info"] +
                         ["/benchmarks/" + slugify(f"{row[0]}-{row[1]}") for row in db.execute("SELECT name,version FROM benchmarks")],
-        "models": lambda: ["/models/glm-5-3", "/models/deepseek-v4-pro"] +
-                          ["/models/" + row[0] for row in db.execute("""SELECT canonical_slug FROM models
-                            WHERE canonical_slug IS NOT NULL AND status!='DEPRECATED'
-                            AND canonical_slug NOT IN ('zhipuai/glm-5.3','deepseek/deepseek-v4-pro')""")],
+        "models": lambda: [("/models/" + row[0], row[1]) for row in db.execute("""SELECT m.canonical_slug,
+                            (SELECT MAX(d.observed_at) FROM selected_facts sf JOIN data_observations d ON d.id=sf.observation_id
+                             WHERE sf.entity='model:'||m.id) lastmod FROM models m
+                            WHERE m.canonical_slug IS NOT NULL AND m.status!='DEPRECATED'
+                            AND EXISTS(SELECT 1 FROM provider_offerings o WHERE o.model_id=m.id)""")],
         "providers": lambda: ["/providers/" + slugify(row[0]) for row in db.execute("SELECT name FROM providers WHERE canonical_provider_id IS NULL")],
-        "harnesses": lambda: ["/harnesses/codex", "/harnesses/hermes"] + ["/harnesses/" + slugify(row[0]) for row in db.execute("SELECT name FROM harnesses WHERE name NOT IN ('Codex CLI','Hermes Agent')")],
+        "harnesses": lambda: ["/harnesses/" + slugify(row[0]) for row in db.execute("SELECT name FROM harnesses")],
         "use-cases": lambda: ["/use-cases/free-tool-calling", "/use-cases/3d-generation"] + ["/use-cases/" + row[0] for row in db.execute("SELECT slug FROM use_cases WHERE slug!='3d'")],
         "workflows": lambda: ["/workflows/" + row[0] for row in db.execute("SELECT slug FROM workflows")],
     }
@@ -520,7 +668,10 @@ def sitemap_group(group):
 
 def _feed(title, path, entries):
     root = public_origin()
-    updated = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    timestamps = [str(entry[2]) for entry in entries if entry[2]]
+    updated = max(timestamps, default="1970-01-01")
+    if "T" not in updated:
+        updated += "T00:00:00Z"
     def atom_time(value):
         value = str(value or datetime.now(timezone.utc).isoformat())
         if "T" not in value:
@@ -528,7 +679,7 @@ def _feed(title, path, entries):
         return value.replace("+00:00", "Z")
     items = "".join(f"<entry><id>{escape(root + url)}</id><title>{escape(str(name))}</title><link href=\"{escape(root + url)}\"/><updated>{escape(atom_time(when))}</updated><summary>{escape(str(summary))}</summary></entry>" for name, url, when, summary in entries)
     body = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed xmlns=\"http://www.w3.org/2005/Atom\"><id>{root}{path}</id><title>{title}</title><updated>{updated}</updated><link href=\"{root}{path}\" rel=\"self\"/>{items}</feed>"
-    return Response(body, mimetype="application/atom+xml")
+    return _conditional_text(body, "application/atom+xml")
 
 
 @public.get("/feeds/releases.atom")
@@ -583,5 +734,8 @@ def changes_json_feed():
     for row in _offer_entries("ACTIVE")[:20]:
         items.append({"id": root + row[1] + "#" + slugify(row[0]), "url": root + row[1],
                       "title": row[0], "date_modified": json_time(row[2]), "content_text": row[3]})
-    return jsonify({"version": "https://jsonfeed.org/version/1.1", "title": "UseThisModel catalog changes",
-                    "home_page_url": root, "feed_url": root + "/feeds/changes.json", "items": items})
+    response = jsonify({"version": "https://jsonfeed.org/version/1.1", "title": "UseThisModel catalog changes",
+                        "home_page_url": root, "feed_url": root + "/feeds/changes.json", "items": items})
+    response.set_etag(sha256(response.get_data()).hexdigest(), weak=False)
+    response.headers.setdefault("Cache-Control", "public, max-age=60, stale-while-revalidate=30")
+    return response.make_conditional(request)

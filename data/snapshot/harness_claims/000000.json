@@ -160,5 +160,15 @@
 {"claim_key":"mcp_transports","claim_value":"stdio, Streamable HTTP with OAuth","harness_id":13,"id":159,"note":null,"source_id":57,"verified_at":"2026-09-29"},
 {"claim_key":"form_factor","claim_value":"IDE, ACP, terminal agents","harness_id":13,"id":160,"note":null,"source_id":57,"verified_at":"2026-09-29"},
 {"claim_key":"headless","claim_value":"NO","harness_id":13,"id":161,"note":null,"source_id":57,"verified_at":"2026-09-29"},
-{"claim_key":"ssh_remote","claim_value":"YES — headless Zed server over SSH","harness_id":13,"id":162,"note":null,"source_id":57,"verified_at":"2026-09-29"}
+{"claim_key":"ssh_remote","claim_value":"YES — headless Zed server over SSH","harness_id":13,"id":162,"note":null,"source_id":57,"verified_at":"2026-09-29"},
+{"claim_key":"coding_agent","claim_value":"YES","harness_id":15,"id":163,"note":"Cursor CLI is an interactive and headless coding agent. Its CLI accepts explicit model selection; provider route configurability is not claimed here.","source_id":75,"verified_at":"2026-09-30"},
+{"claim_key":"coding_agent","claim_value":"YES","harness_id":16,"id":164,"note":"Official CLI documentation describes direct LLM API-key authentication as well as JetBrains account access.","source_id":76,"verified_at":"2026-09-30"},
+{"claim_key":"coding_agent","claim_value":"YES","harness_id":17,"id":165,"note":"Official model routing supports provider API keys, subscriptions, routers, and custom compatible endpoints.","source_id":77,"verified_at":"2026-09-30"},
+{"claim_key":"coding_agent","claim_value":"YES","harness_id":18,"id":166,"note":"Official documentation describes custom model configurations through BYOK.","source_id":78,"verified_at":"2026-09-30"},
+{"claim_key":"provider_route_configuration","claim_value":"LIMITED","harness_id":15,"id":167,"note":"Cursor CLI is an interactive and headless coding agent. Its CLI accepts explicit model selection; provider route configurability is not claimed here.","source_id":75,"verified_at":"2026-09-30"},
+{"claim_key":"provider_route_configuration","claim_value":"DOCUMENTED","harness_id":16,"id":168,"note":"Official CLI documentation describes direct LLM API-key authentication as well as JetBrains account access.","source_id":76,"verified_at":"2026-09-30"},
+{"claim_key":"provider_route_configuration","claim_value":"DOCUMENTED","harness_id":17,"id":169,"note":"Official model routing supports provider API keys, subscriptions, routers, and custom compatible endpoints.","source_id":77,"verified_at":"2026-09-30"},
+{"claim_key":"provider_route_configuration","claim_value":"DOCUMENTED","harness_id":18,"id":170,"note":"Official documentation describes custom model configurations through BYOK.","source_id":78,"verified_at":"2026-09-30"},
+{"claim_key":"current_stewardship","claim_value":"AAIF (Agentic AI Foundation), hosted by the Linux Foundation; project founded by Block","harness_id":7,"id":171,"note":"Current governance README identifies Goose as stewarded by AAIF and established as a Series of LF Projects.","source_id":79,"verified_at":"2026-09-30"},
+{"claim_key":"current_owner","claim_value":"Cursor officially acquired by SpaceX on 2026-08-14","harness_id":15,"id":172,"note":"Cursor announcement states the acquisition completed; Cursor CLI remains an active coding agent.","source_id":80,"verified_at":"2026-09-30"}
 ]

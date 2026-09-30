@@ -26,6 +26,40 @@ MODEL_CATEGORIES = {
 }
 
 
+def modality_category(raw, name=None):
+    """Map source modality strings to a small cautious display taxonomy."""
+    value = str(raw or "").strip().lower().replace(" ", "")
+    if not value:
+        return "Other"
+    if "3d" in value:
+        return "3D generation"
+    model_name = str(name or "").casefold()
+    if "embedding" in value or "embedding" in model_name:
+        return "Embedding"
+    if "rerank" in value or "rerank" in model_name:
+        return "Reranker"
+    if value == "text->audio" or any(word in model_name for word in ("text-to-speech", "tts", "voice generation")):
+        return "Text-to-speech"
+    if value == "audio->text" or any(word in model_name for word in ("speech-to-text", "stt", "asr", "whisper")):
+        return "Speech-to-text"
+    if "video generation" in model_name or "text-to-video" in model_name:
+        return "Video generation"
+    image_generators = ("image generation", "text-to-image", "image generator", "imagen", "ideogram",
+                        "dall-e", "gpt-image", "qwen-image", "flux", "recraft", "seedream",
+                        "nano banana", "grok imagine image", "muse image")
+    if any(marker in model_name for marker in image_generators):
+        return "Image generation"
+    if value == "audio" and any(word in model_name for word in ("music", "audio generation", "suno", "udio")):
+        return "Audio / music"
+    if value in {"text", "text->text"}:
+        return "Text LLM"
+    if "text" in value or any(token in value for token in ("image", "audio", "video", "pdf", "file")):
+        return "Multimodal LLM"
+    if value in {"audio", "video", "image"}:
+        return "Other"
+    return "Other"
+
+
 def normalize_context(value):
     """Normalize positive token counts and common context-window labels."""
     raw = str(value).strip().lower().replace(",", "").replace("_", "")
@@ -57,17 +91,24 @@ def interpret_search(filters):
             result[key] = value
             applied.append(label)
 
-    harnesses = {
-        "hermes": "Hermes Agent",
-        "opencode": "OpenCode",
-        "open code": "OpenCode",
-        "codex": "Codex CLI",
-        "pi": "Pi",
+    harness_aliases = {
+        "claude": "Claude Code", "claude code": "Claude Code", "claude-code": "Claude Code",
+        "codex": "Codex CLI", "codex cli": "Codex CLI", "codex-cli": "Codex CLI",
+        "opencode": "OpenCode", "open code": "OpenCode",
+        "hermes": "Hermes Agent", "hermes agent": "Hermes Agent", "hermes-agent": "Hermes Agent",
+        "gemini": "Gemini CLI", "gemini cli": "Gemini CLI", "gemini-cli": "Gemini CLI",
+        "qwen": "Qwen Code", "qwen code": "Qwen Code", "qwen-code": "Qwen Code",
+        "goose": "Goose", "cline": "Cline", "roo": "Roo Code", "roo code": "Roo Code", "roo-code": "Roo Code",
+        "aider": "Aider", "continue": "Continue", "zcode": "ZCode", "zed": "Zed", "pi": "Pi",
+        "cursor": "Cursor CLI", "cursor cli": "Cursor CLI", "junie": "Junie CLI", "junie cli": "Junie CLI",
+        "amp": "Amp", "droid": "Factory Droid",
     }
-    for phrase, harness in harnesses.items():
-        if re.search(rf"\b(?:works?\s+with\s+)?{re.escape(phrase)}\b", text):
+    for phrase in sorted(harness_aliases, key=len, reverse=True):
+        harness = harness_aliases[phrase]
+        pattern = rf"\b(?:works?\s+with\s+)?{re.escape(phrase)}\b"
+        if re.search(pattern, text):
             set_if_empty("harness", harness, f"Harness: {harness}")
-            text = re.sub(rf"\b(?:works?\s+with\s+)?{re.escape(phrase)}\b", " ", text)
+            text = re.sub(pattern, " ", text)
             break
     if re.search(r"\bfree\b|\$0", text):
         set_if_empty("free", "1", "Price: $0 route")
@@ -180,10 +221,20 @@ def route_rows(db, filters=None):
         normalized_q = re.sub(r"[\s._-]+", "", q.lower())
         clauses.append("(lower(m.canonical_name) LIKE ? OR lower(o.api_model_id) LIKE ? OR lower(COALESCE(cp.name,p.name)) LIKE ? OR lower(COALESCE(l.name,m.vendor)) LIKE ? OR replace(replace(replace(replace(lower(m.canonical_name),' ',''),'-',''),'.',''),'_','') LIKE ? OR replace(replace(replace(replace(lower(o.api_model_id),' ',''),'-',''),'.',''),'_','') LIKE ?)")
         params += [f"%{q.lower()}%"] * 4 + [f"%{normalized_q}%"] * 2
-    for key, column in (("lab", "COALESCE(l.name,m.vendor)"), ("provider", "COALESCE(cp.name,p.name)"), ("type", "m.modality"), ("status", "m.status")):
+    for key, column in (("lab", "COALESCE(l.name,m.vendor)"), ("provider", "COALESCE(cp.name,p.name)"), ("status", "m.status")):
         if filters.get(key) and filters[key] != "any":
             clauses.append(f"{column}=?")
             params.append(filters[key])
+    if filters.get("type") and filters["type"] != "any":
+        wanted = filters["type"].casefold()
+        matching_ids = [r[0] for r in db.execute("SELECT id,modality,canonical_name FROM models")
+                        if modality_category(r[1], r[2]).casefold() == wanted]
+        if matching_ids:
+            clauses.append(f"m.id IN ({','.join('?' for _ in matching_ids)})")
+            params.extend(matching_ids)
+        else:
+            clauses.append("m.modality=?")
+            params.append(filters["type"])
     if filters.get("release") == "week":
         clauses.append("m.released_at >= ?")
         params.append((date.today() - timedelta(days=7)).isoformat())
@@ -273,6 +324,7 @@ def route_rows(db, filters=None):
         WHERE {' AND '.join(clauses)}
         ORDER BY
           CASE WHEN ?='featured' THEN CASE WHEN o.tool_support='YES' THEN 0 ELSE 1 END ELSE 0 END,
+          CASE WHEN ?='featured' THEN (SELECT COUNT(*) FROM provider_offerings coverage WHERE coverage.model_id=m.id) ELSE 0 END DESC,
           CASE WHEN ?='featured' THEN CASE WHEN m.released_at IS NULL THEN 1 ELSE 0 END ELSE 0 END,
           CASE WHEN ?='featured' THEN m.released_at END DESC,
           CASE WHEN ?='featured' THEN CASE WHEN active_deal THEN 0 ELSE 1 END ELSE 0 END,
@@ -284,7 +336,7 @@ def route_rows(db, filters=None):
     """
     sort = filters.get("sort", "price")
     result = [dict(row) for row in db.execute(
-        sql, [*params, sort, sort, sort, sort, sort, sort, sort, limit, offset]
+        sql, [*params, sort, sort, sort, sort, sort, sort, sort, sort, limit, offset]
     ).fetchall()]
     for row in result:
         row["value_score"] = (
@@ -299,7 +351,7 @@ def filter_options(db):
     return {
         "labs": [r[0] for r in db.execute("SELECT name FROM labs ORDER BY name")],
         "providers": [r[0] for r in db.execute("SELECT name FROM providers WHERE canonical_provider_id IS NULL ORDER BY name")],
-        "types": [r[0] for r in db.execute("SELECT DISTINCT modality FROM models ORDER BY modality")],
+        "types": sorted({modality_category(r[0], r[1]) for r in db.execute("SELECT modality,canonical_name FROM models")}),
         "use_cases": [dict(r) for r in db.execute("SELECT slug,name FROM use_cases ORDER BY name")],
         "harnesses": [dict(r) for r in db.execute("SELECT id,name FROM harnesses ORDER BY name")],
         "workflows": [dict(r) for r in db.execute("SELECT id,slug,name FROM workflows ORDER BY name")],
@@ -344,7 +396,7 @@ def offer_rows(db, include_expired=False):
     condition = "1=1" if include_expired else "x.status='ACTIVE' AND (x.starts_at IS NULL OR x.starts_at<=date('now')) AND (x.ends_at IS NULL OR x.ends_at>=date('now'))"
     return [dict(r) for r in db.execute(f"""
       SELECT x.*,p.name provider_name,o.api_model_id,m.canonical_name,o.tool_support,
-        o.context_limit,o.rate_limit_note,o.privacy_caveat route_privacy_caveat,
+        o.context_limit,o.access_semantics,o.access_requirement,o.rate_limit_note,o.privacy_caveat route_privacy_caveat,
         rv.upstream_provider,rv.provider_tag,rv.endpoint_status,rv.quantization
       FROM offers x JOIN providers p ON p.id=x.provider_id
       LEFT JOIN provider_offerings o ON o.id=x.offering_id

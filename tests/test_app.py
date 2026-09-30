@@ -1,6 +1,8 @@
 import json
+import re
 import sqlite3
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
@@ -125,8 +127,8 @@ def test_calculator_compares_without_inventing_break_even(client, app):
         "/workflows/unreal-engine",
         "/workflows/reaper",
         "/compatibility",
-        "/offers",
-        "/new-releases",
+        "/deals",
+        "/releases",
         "/benchmarks",
         "/use-cases",
         "/compare",
@@ -355,7 +357,8 @@ def test_media_routes_keep_native_pricing_units_and_features(client):
 
 
 def test_offers_rankings_and_personal_setup_are_visible(client):
-    offers = client.get("/offers")
+    assert client.get("/offers").status_code == 301
+    offers = client.get("/deals")
     assert b"OpenRouter Free Models Router" in offers.data
     assert b"OpenAI Batch API" in offers.data
     assert b"First seen" in offers.data and b"Last verified" in offers.data
@@ -641,3 +644,143 @@ def test_public_api_caps_requested_route_page(client):
     assert response.status_code == 200
     assert response.json['meta']['count'] <= 250
     assert response.headers['Cache-Control'].startswith('public, max-age=60')
+
+
+def test_rest_pagination_contract_enumerates_complete_model_catalog(client, app):
+    first = client.get('/api/v1/models?limit=5&page=1').json
+    second = client.get('/api/v1/models?limit=5&page=2').json
+    assert first['meta']['count'] == 5
+    assert first['meta']['total'] > 5
+    assert first['meta']['offset'] == 0
+    assert first['meta']['next_offset'] == 5
+    assert first['meta']['has_more'] is True
+    assert second['meta']['offset'] == 5
+    assert second['meta']['previous_offset'] == 0
+    assert not ({row['id'] for row in first['data']} & {row['id'] for row in second['data']})
+    with app.app_context():
+        total_models = get_db().execute('SELECT COUNT(*) FROM models').fetchone()[0]
+    assert first['meta']['total'] == total_models
+    offset_page = client.get('/api/v1/models?limit=5&offset=5').json
+    assert [x['id'] for x in offset_page['data']] == [x['id'] for x in second['data']]
+
+
+@pytest.mark.parametrize('path', [
+    '/api/v1/providers', '/api/v1/harnesses', '/api/v1/offers', '/api/v1/plans',
+    '/api/v1/workflows', '/api/v1/benchmarks', '/api/v1/access-routes',
+    '/api/v1/releases?window=all', '/api/v1/search',
+])
+def test_api_collections_expose_total_and_next_page(client, path):
+    response = client.get(path + ('&' if '?' in path else '?') + 'limit=3&offset=0')
+    assert response.status_code == 200
+    meta = response.json['meta']
+    assert meta['count'] == min(3, meta['total'])
+    assert meta['limit'] == 3
+    assert meta['offset'] == 0
+    assert meta['next_offset'] == (3 if meta['total'] > 3 else None)
+    assert meta['has_more'] is (meta['total'] > 3)
+
+
+def test_invalid_pagination_is_rejected_and_large_limit_is_capped(client):
+    assert client.get('/api/v1/models?page=0').status_code == 400
+    assert client.get('/api/v1/models?page=2&offset=20').status_code == 400
+    assert client.get('/api/v1/models?limit=100000').json['meta']['limit'] == 250
+
+
+def test_free_route_api_applies_provider_and_access_semantics(client):
+    response = client.get('/api/v1/free-routes?provider=OpenRouter&limit=20')
+    assert response.status_code == 200
+    assert response.json['meta']['total'] > 0
+    assert all(row['provider']['name'] == 'OpenRouter' for row in response.json['data'])
+    assert all(row['access_semantics'] in {'FREE_API','FREE_TIER','PROMOTIONAL_FREE','TRIAL_CREDIT'} for row in response.json['data'])
+    assert client.get('/api/v1/free-routes?provider=not-a-provider').status_code == 400
+
+
+@pytest.mark.parametrize('phrase,expected', [
+    ('codex', 'Codex CLI'), ('codex cli', 'Codex CLI'), ('claude code', 'Claude Code'),
+    ('open code', 'OpenCode'), ('hermes-agent', 'Hermes Agent'), ('gemini cli', 'Gemini CLI'),
+    ('qwen code', 'Qwen Code'), ('goose', 'Goose'), ('cline', 'Cline'), ('roo code', 'Roo Code'),
+    ('aider', 'Aider'), ('continue', 'Continue'), ('zcode', 'ZCode'), ('zed', 'Zed'),
+    ('junie cli', 'Junie CLI'), ('cursor cli', 'Cursor CLI'), ('amp', 'Amp'), ('droid', 'Factory Droid'),
+])
+def test_registered_harnesses_and_aliases_are_deterministically_searchable(phrase, expected):
+    filters, applied = interpret_search({'q': f'works with {phrase}'})
+    assert filters['harness'] == expected
+    assert any(label == f'Harness: {expected}' for label in applied)
+
+
+def test_harness_slug_and_display_name_resolve_identically(client):
+    slug = client.get('/api/v1/compatibility?harness=hermes-agent&limit=5').json
+    display = client.get('/api/v1/compatibility?harness=Hermes%20Agent&limit=5').json
+    assert slug['meta']['harness'] == display['meta']['harness']
+    assert [r['id'] for r in slug['data']] == [r['id'] for r in display['data']]
+
+
+def test_modality_taxonomy_preserves_source_modality(client):
+    from app.query import modality_category
+    assert modality_category('text,image', 'FLUX.2 [pro]') == 'Image generation'
+    assert modality_category('audio->text', 'Whisper') == 'Speech-to-text'
+    assert modality_category('text,audio', 'ChatGPT') == 'Multimodal LLM'
+    assert modality_category('unknown-format', 'Unknown') == 'Other'
+    response = client.get('/api/v1/search?limit=20')
+    assert response.status_code == 200
+    assert all(row['model']['modality_category'] == row['model']['type'] for row in response.json['data'])
+    assert all(row['model']['raw_modality'] for row in response.json['data'])
+    with client.application.app_context():
+        from app.query import filter_options
+        assert len(filter_options(get_db())['types']) <= 10
+
+
+def test_releases_page_is_chronological_and_labels_date_provenance(client):
+    response = client.get('/releases')
+    assert response.status_code == 200
+    body = response.data.decode()
+    assert 'Official date' in body or 'Aggregator date' in body or 'Publisher metadata date' in body or 'Unverified date' in body
+    import re
+    dates = re.findall(r'Released (\d{4}-\d{2}-\d{2})', body)
+    assert dates == sorted(dates, reverse=True)
+    assert 'route' in body.lower()
+
+
+def test_offers_page_exposes_catalog_pagination_and_filters(client):
+    with client.application.app_context():
+        db = get_db()
+        from app.data_snapshot import apply_snapshot
+        apply_snapshot(db, Path(__file__).parents[1] / 'data/catalog.json')
+    first = client.get('/deals?page=1')
+    assert first.status_code == 200
+    assert b'current offers in the catalog' in first.data
+    assert b'Next' in first.data
+    provider = client.application.test_client().get('/api/v1/offers?limit=1').json['data'][0]['provider_name']
+    filtered = client.get('/deals?provider=' + provider.replace(' ', '+'))
+    assert filtered.status_code == 200
+    assert provider.encode() in filtered.data
+    assert b'name="harness"' in filtered.data and b'name="context"' in filtered.data
+
+
+def test_llms_full_is_current_conditional_and_sitemap_lastmod_is_valid(client):
+    with client.application.app_context():
+        from app.data_snapshot import apply_snapshot
+        apply_snapshot(get_db(), Path(__file__).parents[1] / 'data/catalog.json')
+    response = client.get('/llms-full.txt')
+    assert response.status_code == 200
+    assert b'## Models with the broadest current route coverage' in response.data
+    assert b'## Harnesses' in response.data and b'## Current offers' in response.data
+    assert response.headers.get('ETag')
+    assert client.get('/llms-full.txt', headers={'If-None-Match': response.headers['ETag']}).status_code == 304
+    changes = client.get('/feeds/changes.json')
+    assert changes.headers.get('ETag')
+    assert client.get('/feeds/changes.json', headers={'If-None-Match': changes.headers['ETag']}).status_code == 304
+    sitemap = client.get('/sitemaps/models.xml')
+    parsed = ElementTree.fromstring(sitemap.data)
+    ns = {'s': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
+    dates = [node.text for node in parsed.findall('.//s:lastmod', ns)]
+    assert dates and all(re.fullmatch(r'\d{4}-\d{2}-\d{2}', value) for value in dates)
+    assert sitemap.headers.get('ETag')
+
+
+def test_old_public_paths_redirect_to_canonical_navigation(client):
+    assert client.get('/offers').headers['Location'].endswith('/deals')
+    assert client.get('/new-releases').headers['Location'].endswith('/releases')
+    home = client.get('/').data
+    assert b'href="/offers"' not in home
+    assert b'href="/new-releases"' not in home

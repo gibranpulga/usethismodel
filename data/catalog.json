@@ -441,13 +441,13 @@
     "harness_access_methods": [
       {
         "path": "snapshot/harness_access_methods/000000.json",
-        "sha256": "5ec5e20a7dfc7e0d3623aff1c36449aaf6988e9abf3298bff622056e948d06b9"
+        "sha256": "c443a29c58680cce1dcdab2518f64e6f5ffc7be8aeb654ff2bbda7699569a261"
       }
     ],
     "harness_claims": [
       {
         "path": "snapshot/harness_claims/000000.json",
-        "sha256": "fb86a0f4b7b30c0f89539305e6b982eebb9e8c8a0671cc074ec5a133499e965f"
+        "sha256": "14d01bb04f66e6627b6f88cfea4e60f82dfb418daecb3dbcd84ee9c2a879f3fe"
       }
     ],
     "harness_mcp_capabilities": [
@@ -466,7 +466,7 @@
     "harnesses": [
       {
         "path": "snapshot/harnesses/000000.json",
-        "sha256": "cf08b7e789d2d1ae54b6dea11cf992aa28cf8d5e5f10db8ba4f29888cf68d9d9"
+        "sha256": "2934ac87ed02cf191d59c4b37ae8c0a3366526fe2f44551d7f99d093017f6ed0"
       }
     ],
     "labs": [
@@ -735,7 +735,7 @@
     "plans": [
       {
         "path": "snapshot/plans/000000.json",
-        "sha256": "b6d9ca5a1261678d67d62ede04aa5fd1a19c8fedfa5906d3d11aee53994a65a7"
+        "sha256": "b80c9c267de08e110403b2ad22e64b266c379f46dd6818bf1da1d78981832be6"
       }
     ],
     "pricing_records": [
@@ -907,7 +907,7 @@
       },
       {
         "path": "snapshot/review_queue/000002.json",
-        "sha256": "d1559b16fc9fd5d751296193e8d35497d04b12be3df4cb8a67f7b55f8529adc2"
+        "sha256": "be90758c6133d7c1e83aa0688beb8d9c4e3a34f6744762ce9a9aed69fcfd2006"
       }
     ],
     "route_capabilities": [],
@@ -1259,7 +1259,7 @@
     "sources": [
       {
         "path": "snapshot/sources/000000.json",
-        "sha256": "627c1b40b7686f64addb123b2d593ccddd84239695ad093bd7fd1516ffebe2bc"
+        "sha256": "df091c34ee5d6da1b4e8d41f823664a82412acdf9591f7d16063f6fbf7e6c17b"
       }
     ],
     "use_cases": [

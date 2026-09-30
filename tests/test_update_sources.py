@@ -123,6 +123,12 @@ def test_gateway_vendor_ids_share_canonical_identity_and_route_suffixes_do_not_s
     assert lite["canonical_slug"] == "openai/gpt-next"
 
 
+@pytest.mark.parametrize("modifier", [":free", ":floor", ":nitro", ":online", ":batch"])
+def test_openrouter_behavior_modifiers_do_not_create_distinct_model_identity(modifier):
+    row = parse_openrouter(openrouter({"id": "openai/gpt-next" + modifier}))[0]
+    assert row["canonical_slug"] == "openai/gpt-next"
+
+
 @pytest.mark.parametrize("value", ["NaN", "Infinity", True, "bad"])
 def test_invalid_prices_reject_snapshot(value):
     with pytest.raises(ValueError):

@@ -80,5 +80,9 @@
 {"access_method":"CODING_SUBSCRIPTION","harness_id":13,"id":79,"note":"Zed plan or Copilot","source_id":57,"state":"YES","verified_at":"2026-09-29"},
 {"access_method":"LOCAL_ENDPOINT","harness_id":13,"id":80,"note":null,"source_id":57,"state":"YES","verified_at":"2026-09-29"},
 {"access_method":"CUSTOM_OPENAI_COMPATIBLE","harness_id":13,"id":81,"note":null,"source_id":57,"state":"YES","verified_at":"2026-09-29"},
-{"access_method":"CUSTOM_ANTHROPIC_COMPATIBLE","harness_id":13,"id":82,"note":null,"source_id":57,"state":"YES","verified_at":"2026-09-29"}
+{"access_method":"CUSTOM_ANTHROPIC_COMPATIBLE","harness_id":13,"id":82,"note":null,"source_id":57,"state":"YES","verified_at":"2026-09-29"},
+{"access_method":"OAUTH","harness_id":15,"id":83,"note":"Cursor CLI is an interactive and headless coding agent. Its CLI accepts explicit model selection; provider route configurability is not claimed here.","source_id":75,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"API_KEY","harness_id":16,"id":84,"note":"Official CLI documentation describes direct LLM API-key authentication as well as JetBrains account access.","source_id":76,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"API_KEY","harness_id":17,"id":85,"note":"Official model routing supports provider API keys, subscriptions, routers, and custom compatible endpoints.","source_id":77,"state":"YES","verified_at":"2026-09-30"},
+{"access_method":"API_KEY","harness_id":18,"id":86,"note":"Official documentation describes custom model configurations through BYOK.","source_id":78,"state":"YES","verified_at":"2026-09-30"}
 ]

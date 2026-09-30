@@ -1,6 +1,7 @@
 import os
 import re
 import secrets
+from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -13,6 +14,8 @@ from .query import (
     access_route_rows,
     filter_options,
     interpret_search,
+    modality_category,
+    normalize_context,
     offer_rows,
     openrouter_free_rows,
     openrouter_variant_rows,
@@ -594,23 +597,70 @@ def create_app(test_config=None):
         return render_template("calculator.html", title="Cost calculator", filters=filters, options=filter_options(db()), routes=calculated[:12], route_count=len(calculated), plans=plan_rows(db(), {"subscription": "1", "coding": "1"}), selected_plan=dict(selected_plan) if selected_plan else None, input_tokens=input_tokens, output_tokens=output_tokens, cache_share=round(cache_share*100), cache_write_share=round(cache_write_share*100), batch=batch)
 
     @app.get("/deals")
-    @app.get("/offers")
     def offers():
         differences = pricing_differences(db())
         current_offers = offer_rows(db())
         free_routes = openrouter_free_rows(db())
+        provider_filter = request.args.get("provider", "").strip()
+        model_filter = request.args.get("model", "").strip()
+        kind_filter = request.args.get("kind", "").strip()
+        tools_filter = request.args.get("tools", "").strip()
+        harness_filter = request.args.get("harness", "").strip()
+        context_filter = request.args.get("context", "").strip()
+        filtered = current_offers
+        if provider_filter:
+            filtered = [o for o in filtered if provider_filter.casefold() in o["provider_name"].casefold()]
+        if model_filter:
+            filtered = [o for o in filtered if model_filter.casefold() in (o.get("canonical_name") or "").casefold()]
+        if kind_filter == "free":
+            filtered = [o for o in filtered if o["offer_type"] == "$0_ROUTE"]
+        elif kind_filter == "discount":
+            filtered = [o for o in filtered if o.get("discount_percent")]
+        if request.args.get("subscription") == "1":
+            filtered = [o for o in filtered if o.get("access_semantics") == "INCLUDED_WITH_SUBSCRIPTION"]
+        if tools_filter == "1":
+            filtered = [o for o in filtered if o.get("tool_support") == "YES"]
+        if context_filter:
+            try:
+                minimum_context = int(normalize_context(context_filter))
+                filtered = [o for o in filtered if (o.get("context_limit") or 0) >= minimum_context]
+            except ValueError:
+                filtered = []
+        if harness_filter:
+            harness = db().execute("SELECT id FROM harnesses WHERE lower(name)=lower(?) OR lower(replace(name,' ', '-'))=lower(?)", (harness_filter, harness_filter)).fetchone()
+            if not harness:
+                filtered = []
+            else:
+                filtered = [o for o in filtered if o.get("offering_id") and compatibility_for(db(), harness["id"], o["offering_id"])['status'] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}]
+        try:
+            offer_page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            offer_page = 1
+        offer_size = 20
+        offer_page_params = request.args.to_dict()
+        offer_page_params.pop("page", None)
+        offer_prev_url = "/deals?" + urlencode({**offer_page_params, "page": offer_page-1}) if offer_page > 1 else None
+        offer_next_url = "/deals?" + urlencode({**offer_page_params, "page": offer_page+1}) if offer_page*offer_size < len(filtered) else None
         canonical = absolute_url("/deals")
         schema = {"@context": "https://schema.org", "@type": "ItemList", "name": "Current AI model deals",
                   "url": canonical, "itemListElement": [
                       {"@type": "Offer", "name": offer["title"], "url": offer["terms_url"] or canonical,
                        "validThrough": offer["ends_at"], "availability": "https://schema.org/InStock"}
                       for offer in current_offers[:8]]}
-        return render_template("offers.html", title="Offers & deals", offers=current_offers[:8],
-          offer_count=len(current_offers), expired=offer_rows(db(), include_expired=True),
+        return render_template("offers.html", title="Offers & deals", offers=filtered[(offer_page-1)*offer_size:offer_page*offer_size],
+          offer_count=len(filtered), all_offer_count=len(current_offers), offer_page=offer_page,
+          offer_has_more=offer_page*offer_size < len(filtered), offer_filters=request.args,
+          offer_prev_url=offer_prev_url, offer_next_url=offer_next_url,
+          offer_providers=sorted({o["provider_name"] for o in current_offers}), offer_harnesses=rows("SELECT id,name FROM harnesses ORDER BY name"),
+          expired=offer_rows(db(), include_expired=True),
           free_routes=free_routes[:8], free_count=len(free_routes),
           discounts=differences["discounts"][:8], direct_differences=differences["direct"][:8],
           structured_data=schema, canonical_url=canonical,
           meta_description="Current source-backed AI model deals, free routes, discounts, terms, expiration dates, and last verification dates.")
+
+    @app.get("/offers")
+    def offers_legacy():
+        return redirect(url_for("offers"), code=301)
 
     @app.get("/rankings")
     def rankings():
@@ -673,13 +723,35 @@ def create_app(test_config=None):
           selected_workflows=selected_workflows)
 
     @app.get("/releases")
-    @app.get("/new-releases")
     def releases():
-        release_routes = route_rows(db(), {"release": "week"})
+        cutoff = (date.today() - timedelta(days=30)).isoformat()
+        release_models = rows("""SELECT m.*,l.name lab_name,
+          (SELECT COUNT(*) FROM provider_offerings o WHERE o.model_id=m.id) route_count,
+          (SELECT MAX(COALESCE(o.last_verified_at,o.fetched_at)) FROM provider_offerings o WHERE o.model_id=m.id) route_verified
+          FROM models m LEFT JOIN labs l ON l.id=m.lab_id
+          WHERE m.released_at IS NOT NULL AND m.released_at>=? AND m.status!='DEPRECATED'
+          ORDER BY m.released_at DESC,m.canonical_name""", (cutoff,))
+        today = date.today().isoformat()
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        release_models = [dict(item) for item in release_models]
+        for item in release_models:
+            observations = rows("""SELECT s.name,s.url FROM data_observations d LEFT JOIN sources s ON s.id=d.source_id
+                WHERE d.entity=? AND d.field IN ('released_at','release_date') ORDER BY d.id DESC LIMIT 1""",
+                (f"model:{item['id']}",))
+            item["release_source"] = observations[0] if observations else None
+            item["release_confidence"] = {"official":"Official", "publisher_metadata":"Publisher metadata", "aggregator":"Aggregator"}.get(item["release_date_kind"], "Unverified")
+            item["category"] = modality_category(item["modality"], item["canonical_name"])
+            item["group"] = "Today" if item["released_at"] == today else "Yesterday" if item["released_at"] == yesterday else "This week" if item["released_at"] >= (date.today()-timedelta(days=7)).isoformat() else "Earlier this month"
         canonical = absolute_url("/releases")
         schema = {"@context": "https://schema.org", "@type": "Dataset", "name": "New AI model releases",
                   "description": "Recently released models with current provider routes, prices, capabilities and source verification.", "url": canonical}
-        return render_template("models.html", title="New releases", filters={"release": "week"}, options=filter_options(db()), routes=release_routes, structured_data=schema, canonical_url=canonical, meta_description="Newly released AI models with provider routes, current prices, capabilities, and verification dates.")
+        return render_template("releases.html", title="New releases", release_models=release_models,
+          groups=["Today", "Yesterday", "This week", "Earlier this month"], structured_data=schema,
+          canonical_url=canonical, meta_description="Chronological AI model releases with date provenance, capabilities, and exact provider route counts.")
+
+    @app.get("/new-releases")
+    def legacy_releases():
+        return redirect(url_for("releases"), code=301)
 
     @app.get("/benchmarks")
     def benchmarks():
