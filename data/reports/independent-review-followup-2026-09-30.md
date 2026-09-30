@@ -45,6 +45,8 @@ the separate Included with subscription filter, API field, and MCP tool expose
 the paid-plan requirement. Friendly context inputs normalize to token counts;
 malformed numeric, harness, and workflow filters return an explicit warning or
 web error message instead of silently broadening the result.
+Subscription-included rows also store legacy `free_status=PAID`, preventing
+older clients from treating them as public free routes.
 
 ## Provider offers
 
@@ -85,7 +87,7 @@ production host, SSH port, server account, Coolify application/volume IDs, and
 private filesystem examples with placeholders/private configuration. Those
 details were already present in Git history; history was not rewritten.
 
-The credential-pattern scan covered 41 reachable commits and found no AWS,
+The credential-pattern scan covered 44 reachable commits and found no AWS,
 Google, GitHub, OpenAI-format API keys, or private-key headers. The current
 working tree scan found no credential patterns. This is a pattern scan, not a
 proof against every possible secret encoding.
