@@ -142,7 +142,8 @@ def _route_json(row, compatibility=None) -> dict[str, Any]:
         "canonical_model": {"name": row["canonical_name"], "slug": row["canonical_slug"],
                             "type": modality_category(row["modality"], row["canonical_name"]),
                             "raw_modality": row["modality"], "open_weights": bool(row["open_weights"]),
-                            "identity_kind": row["identity_kind"]},
+                            "identity_kind": row["identity_kind"],
+                            "identity_status": "UNRESOLVED" if row["identity_kind"] == "UNKNOWN" else "VERIFIED"},
         "provider": row["provider_name"],
         "price_usd_per_million_tokens": {"input": row["input_price"],
                                            "output": row["output_price"],
@@ -327,11 +328,13 @@ def search_models(query: str | None = None, tools: bool | None = None,
                 item["routes"].append(route)
         if not any((query, tools, free, open_weights, model_type)):
             for row in db.execute("""SELECT m.canonical_name name,m.canonical_slug slug,m.modality type,
-                m.open_weights,m.identity_kind FROM models m WHERE NOT EXISTS
+               m.open_weights,m.identity_kind FROM models m WHERE NOT EXISTS
                 (SELECT 1 FROM provider_offerings o WHERE o.model_id=m.id) ORDER BY m.canonical_name"""):
                 grouped.setdefault(row["slug"], {"name":row["name"],"slug":row["slug"],
                                   "type":modality_category(row["type"],row["name"]),"raw_modality":row["type"],
-                                  "open_weights":bool(row["open_weights"]),"identity_kind":row["identity_kind"],"routes":[]})
+                                  "open_weights":bool(row["open_weights"]),"identity_kind":row["identity_kind"],
+                                  "identity_status":"UNRESOLVED" if row["identity_kind"] == "UNKNOWN" else "VERIFIED",
+                                  "routes":[]})
         return _paged(list(grouped.values()), limit, offset)
 
 

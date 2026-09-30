@@ -369,6 +369,13 @@ def create_app(test_config=None):
     def model_detail(model_id):
         model = db().execute("SELECT m.*,l.name lab_name FROM models m LEFT JOIN labs l ON l.id=m.lab_id WHERE m.id=?", (model_id,)).fetchone()
         if not model:
+            redirect_target = db().execute(
+                """SELECT m.canonical_slug FROM model_identity_redirects r
+                   JOIN models m ON m.id=r.target_model_id WHERE r.old_model_id=?""",
+                (model_id,),
+            ).fetchone()
+            if redirect_target:
+                return redirect(url_for("model_detail_slug", model_slug=redirect_target[0]), code=301)
             abort(404)
         return redirect(url_for("model_detail_slug", model_slug=model["canonical_slug"]), code=301)
 
@@ -378,6 +385,13 @@ def create_app(test_config=None):
         canonical_slug = public_aliases.get(model_slug, model_slug)
         model = db().execute("SELECT m.*,l.name lab_name FROM models m LEFT JOIN labs l ON l.id=m.lab_id WHERE m.canonical_slug=?", (canonical_slug,)).fetchone()
         if not model:
+            redirect_target = db().execute(
+                """SELECT m.canonical_slug FROM model_identity_redirects r
+                   JOIN models m ON m.id=r.target_model_id WHERE r.old_slug=?""",
+                (canonical_slug,),
+            ).fetchone()
+            if redirect_target:
+                return redirect(url_for("model_detail_slug", model_slug=redirect_target[0]), code=301)
             abort(404)
         model_id = model["id"]
         all_offerings = route_rows(db(), {"model_id": model_id, "limit": 250})

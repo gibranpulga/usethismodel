@@ -34,7 +34,7 @@ def test_database_initializes_all_migrations(app):
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
 
-        assert migrations == [(i,) for i in range(1, 21)]
+        assert migrations == [(i,) for i in range(1, 23)]
     assert {
         "models",
         "providers",

@@ -281,6 +281,25 @@ def resolve(db, entity, field, report, now):
     db.execute('INSERT INTO selected_facts VALUES(?,?,?) ON CONFLICT(entity,field) DO UPDATE SET observation_id=excluded.observation_id', (entity, field, chosen['id']))
 
 
+def refresh_access_semantics(db, report=None):
+    """Derive route access from current prices and explicit subscription provider classes."""
+    for row in db.execute('SELECT o.id,o.free_status,p.name provider_name FROM provider_offerings o JOIN providers p ON p.id=o.provider_id').fetchall():
+        prices = dict(db.execute("SELECT price_type,amount FROM pricing_records WHERE offering_id=? AND valid_until IS NULL AND price_type IN ('INPUT','OUTPUT') ORDER BY id", (row['id'],)).fetchall())
+        price_status = 'FREE' if prices.get('INPUT') == 0 and prices.get('OUTPUT') == 0 else 'PAID' if any(v > 0 for v in prices.values()) else 'UNKNOWN'
+        bundled = any(term in row['provider_name'].lower() for term in ('token plan', 'coding plan', 'gitlab duo', 'opencode go'))
+        status = 'PAID' if bundled and price_status == 'FREE' else price_status
+        access = ('INCLUDED_WITH_SUBSCRIPTION' if bundled else 'FREE_API') if price_status == 'FREE' else price_status + '_API' if price_status == 'PAID' else 'UNKNOWN'
+        db.execute('UPDATE provider_offerings SET access_semantics=?,access_requirement=? WHERE id=?',
+                   (access, row['provider_name'] if bundled else None, row['id']))
+        if row['free_status'] != status:
+            db.execute('UPDATE provider_offerings SET free_status=? WHERE id=?', (status, row['id']))
+            if report is not None:
+                if status == 'FREE':
+                    report['New free routes'].append({'offering': row['id']})
+                elif row['free_status'] == 'FREE':
+                    report['Expired free routes'].append({'offering': row['id']})
+
+
 def update(db, records, failures, manifests, now=None):
     now = now or datetime.now(timezone.utc).isoformat(timespec='seconds')
     report = {category: [] for category in CATEGORIES}
@@ -324,7 +343,9 @@ def update(db, records, failures, manifests, now=None):
             alias = db.execute('SELECT model_id FROM model_aliases WHERE provider_id=? AND alias=?', (pid, record['api_model_id'])).fetchone()
             before = db.execute('SELECT count(*) FROM models').fetchone()[0]
             unresolved_slug = f"{provider_key}/{record['api_model_id']}" if ambiguous_namespace and not mapped else record['canonical_slug']
-            mid = mapped['model_id'] if mapped else alias[0] if alias else _model(db, unresolved_slug, record['name'], record['provider_name'], False, 'text', sid)
+            mid = mapped['model_id'] if mapped else alias[0] if alias else _model(
+                db, unresolved_slug, record['name'], False, 'text'
+            )
             if ambiguous_namespace and not mapped and 'identity_kind' in {r[1] for r in db.execute('PRAGMA table_info(models)')}:
                 db.execute("UPDATE models SET identity_kind='UNKNOWN' WHERE id=?", (mid,))
                 review(db, report, now, f'provider-model:{pid}:{record["api_model_id"]}', 'canonical identity', None,
@@ -370,20 +391,7 @@ def update(db, records, failures, manifests, now=None):
     touched.update((r[0], r[1]) for r in db.execute("SELECT DISTINCT entity,field FROM data_observations WHERE accepted=1 AND (entity LIKE 'model:%' OR entity LIKE 'offering:%')"))
     for entity, field in sorted(touched):
         resolve(db, entity, field, report, now)
-    for row in db.execute('SELECT o.id,o.free_status,p.name provider_name FROM provider_offerings o JOIN providers p ON p.id=o.provider_id').fetchall():
-        prices = dict(db.execute("SELECT price_type,amount FROM pricing_records WHERE offering_id=? AND valid_until IS NULL AND price_type IN ('INPUT','OUTPUT') ORDER BY id", (row['id'],)).fetchall())
-        price_status = 'FREE' if prices.get('INPUT') == 0 and prices.get('OUTPUT') == 0 else 'PAID' if any(v > 0 for v in prices.values()) else 'UNKNOWN'
-        bundled = any(term in row['provider_name'].lower() for term in ('token plan', 'coding plan', 'gitlab duo', 'opencode go'))
-        status = 'PAID' if bundled and price_status == 'FREE' else price_status
-        access = ('INCLUDED_WITH_SUBSCRIPTION' if bundled else 'FREE_API') if price_status == 'FREE' else price_status + '_API' if price_status == 'PAID' else 'UNKNOWN'
-        db.execute('UPDATE provider_offerings SET access_semantics=?,access_requirement=? WHERE id=?',
-                   (access, row['provider_name'] if bundled else None, row['id']))
-        if row['free_status'] != status:
-            db.execute('UPDATE provider_offerings SET free_status=? WHERE id=?', (status, row['id']))
-            if status == 'FREE':
-                report['New free routes'].append({'offering': row['id']})
-            elif row['free_status'] == 'FREE':
-                report['Expired free routes'].append({'offering': row['id']})
+    refresh_access_semantics(db, report)
     for offer in db.execute("SELECT id,title FROM offers WHERE status='ACTIVE' AND ends_at IS NOT NULL AND ends_at<?", (now[:10],)).fetchall():
         db.execute("UPDATE offers SET status='EXPIRED' WHERE id=?", (offer['id'],))
         report['Expired offers'].append(dict(offer))

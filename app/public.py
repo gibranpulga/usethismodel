@@ -7,7 +7,17 @@ from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 from xml.sax.saxutils import escape
 
-from flask import Blueprint, Response, abort, current_app, jsonify, make_response, request, url_for
+from flask import (
+    Blueprint,
+    Response,
+    abort,
+    current_app,
+    jsonify,
+    make_response,
+    redirect,
+    request,
+    url_for,
+)
 
 from .db import get_db
 from .domain import compatibility_for
@@ -111,7 +121,8 @@ def _route_json(row, compatibility=None):
                   "slug": row["canonical_slug"], "type": modality_category(row["modality"], row["canonical_name"]),
                   "modality_category": modality_category(row["modality"], row["canonical_name"]), "raw_modality": row["modality"],
                   "open_weights": bool(row["open_weights"]), "status": row["status"],
-                  "release_date": row["released_at"], "identity_kind": row["identity_kind"]},
+                  "release_date": row["released_at"], "identity_kind": row["identity_kind"],
+                  "identity_status": "UNRESOLVED" if row["identity_kind"] == "UNKNOWN" else "VERIFIED"},
         "provider": {"id": row["provider_id"], "name": row["provider_name"],
                      "slug": slugify(row["provider_name"])},
         "limits": {"context": row["context_limit"], "max_output": row["max_output_tokens"]},
@@ -321,7 +332,9 @@ def api_models():
             "modality_category": modality_category(route["modality"], route["canonical_name"]), "raw_modality": route["modality"],
             "open_weights": bool(route["open_weights"]),
             "status": route["status"], "release_date": route["released_at"],
-            "identity_kind": route["identity_kind"], "routes": []})
+            "identity_kind": route["identity_kind"],
+            "identity_status": "UNRESOLVED" if route["identity_kind"] == "UNKNOWN" else "VERIFIED",
+            "routes": []})
         model["routes"].append(_route_json(route, route.get("_compatibility")))
     if not public_filters:
         for row in get_db().execute("""SELECT m.id,m.canonical_name name,m.canonical_slug slug,
@@ -331,7 +344,9 @@ def api_models():
               "lab":row["lab"],"type":modality_category(row["modality"],row["name"]),
               "modality_category":modality_category(row["modality"],row["name"]),"raw_modality":row["modality"],
               "open_weights":bool(row["open_weights"]),"status":row["status"],
-              "release_date":row["released_at"],"identity_kind":row["identity_kind"],"routes":[]})
+              "release_date":row["released_at"],"identity_kind":row["identity_kind"],
+              "identity_status":"UNRESOLVED" if row["identity_kind"] == "UNKNOWN" else "VERIFIED",
+              "routes":[]})
     return _paged_envelope(list(grouped.values()), filters=filters)
 
 
@@ -339,6 +354,13 @@ def api_models():
 def api_model(slug):
     row = get_db().execute("SELECT id FROM models WHERE canonical_slug=?", (slug,)).fetchone()
     if not row:
+        target = get_db().execute(
+            """SELECT m.canonical_slug FROM model_identity_redirects r
+               JOIN models m ON m.id=r.target_model_id WHERE r.old_slug=?""",
+            (slug,),
+        ).fetchone()
+        if target:
+            return redirect(url_for("public.api_model", slug=target[0]), code=301)
         abort(404)
     routes = route_rows(get_db(), {"model_id": row["id"], "limit": 100000})
     first = routes[0] if routes else get_db().execute("SELECT * FROM models WHERE id=?", (row["id"],)).fetchone()
@@ -347,6 +369,7 @@ def api_model(slug):
              "raw_modality": first["modality"], "open_weights": bool(first["open_weights"]),
              "status": first["status"], "release_date": first["released_at"],
              "identity_kind": first["identity_kind"],
+             "identity_status": "UNRESOLVED" if first["identity_kind"] == "UNKNOWN" else "VERIFIED",
              "routes": [_route_json(route) for route in routes]}
     return _envelope(model)
 

@@ -26,23 +26,26 @@ def _provider(db, name, website=None):
     return db.execute("SELECT id FROM providers WHERE name=?", (name,)).fetchone()[0]
 
 
-def _model(db, slug, name, provider_name, open_weights, modality, source_id):
-    lab_name = provider_name.split("/")[0].replace("-ai", "").title()
-    db.execute("INSERT OR IGNORE INTO labs(name,source_id) VALUES(?,?)", (lab_name, source_id))
-    lab_id = db.execute("SELECT id FROM labs WHERE name=?", (lab_name,)).fetchone()[0]
+def _model(db, slug, name, open_weights, modality):
+    """Create a model shell without inferring authorship from a route provider.
+
+    Provider/aggregator display names describe where a route is served, not who
+    created the underlying model. Author identity must come from explicit,
+    source-backed metadata; the current adapters do not provide that field.
+    """
     existing = db.execute("SELECT id FROM models WHERE canonical_slug=?", (slug,)).fetchone()
     if existing:
         return existing[0]
     db.execute(
         """INSERT OR IGNORE INTO models(canonical_name,vendor,modality,open_weights,lab_id,canonical_slug)
            VALUES(?,?,?,?,?,?)""",
-        (name, lab_name, modality, int(bool(open_weights)), lab_id, slug),
+        (name, "Unknown", modality, int(bool(open_weights)), None, slug),
     )
     row = db.execute("SELECT id FROM models WHERE canonical_slug=?", (slug,)).fetchone()
     if not row:  # names in third-party catalogues can collide across distinct releases
         db.execute(
             "INSERT INTO models(canonical_name,vendor,modality,open_weights,lab_id,canonical_slug) VALUES(?,?,?,?,?,?)",
-            (f"{name} ({slug})", lab_name, modality, int(bool(open_weights)), lab_id, slug),
+            (f"{name} ({slug})", "Unknown", modality, int(bool(open_weights)), None, slug),
         )
         row = db.execute("SELECT id FROM models WHERE canonical_slug=?", (slug,)).fetchone()
     return row[0]

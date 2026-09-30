@@ -6,7 +6,9 @@ from pathlib import Path
 # Operational state is intentionally outside the published catalog snapshot.
 # Snapshot application must never erase local usage counters.
 EXCLUDED = {'schema_migrations', 'applied_snapshots', 'analytics_daily', 'rate_limit_windows'}
-OPTIONAL_SNAPSHOT_TABLES = {'documentation_monitor_state', 'plan_value_history'}
+OPTIONAL_SNAPSHOT_TABLES = {
+    'documentation_monitor_state', 'plan_value_history', 'model_identity_redirects'
+}
 
 
 def tables(db):
@@ -120,10 +122,11 @@ def apply_snapshot(db, path):
         if 'access_semantics' in {r[1] for r in db.execute('PRAGMA table_info(provider_offerings)')}:
             db.execute("""UPDATE provider_offerings SET
               access_semantics=CASE
+                WHEN access_semantics!='UNKNOWN' THEN access_semantics
                 WHEN free_status='FREE' AND EXISTS (SELECT 1 FROM providers p WHERE p.id=provider_offerings.provider_id AND (lower(p.name) LIKE '%token plan%' OR lower(p.name) LIKE '%coding plan%' OR lower(p.name) LIKE '%gitlab duo%' OR lower(p.name) LIKE '%opencode go%')) THEN 'INCLUDED_WITH_SUBSCRIPTION'
                 WHEN free_status='FREE' THEN 'FREE_API'
                 WHEN free_status='PAID' THEN 'PAID_API' ELSE 'UNKNOWN' END,
-              access_requirement=CASE WHEN EXISTS (SELECT 1 FROM providers p WHERE p.id=provider_offerings.provider_id AND (lower(p.name) LIKE '%token plan%' OR lower(p.name) LIKE '%coding plan%' OR lower(p.name) LIKE '%gitlab duo%' OR lower(p.name) LIKE '%opencode go%')) THEN (SELECT p.name FROM providers p WHERE p.id=provider_offerings.provider_id) ELSE NULL END""")
+              access_requirement=CASE WHEN EXISTS (SELECT 1 FROM providers p WHERE p.id=provider_offerings.provider_id AND (lower(p.name) LIKE '%token plan%' OR lower(p.name) LIKE '%coding plan%' OR lower(p.name) LIKE '%gitlab duo%' OR lower(p.name) LIKE '%opencode go%')) THEN (SELECT p.name FROM providers p WHERE p.id=provider_offerings.provider_id) ELSE access_requirement END""")
             db.execute("UPDATE provider_offerings SET free_status='PAID' WHERE access_semantics='INCLUDED_WITH_SUBSCRIPTION' AND free_status='FREE'")
         from .data_update import validate
         validate(db)
