@@ -219,7 +219,7 @@ def openapi_spec():
         "openapi": "3.1.0",
         "info": {"title": "UseThisModel public read-only API", "version": API_VERSION,
                  "description": "Source-backed AI model, provider-route, pricing, offer, benchmark and harness compatibility data."},
-        "servers": [{"url": absolute_url("/api/v1")}],
+        "servers": [{"url": public_origin()}],
         "paths": dict(sorted(paths.items())),
     })
 

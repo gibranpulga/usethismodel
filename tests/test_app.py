@@ -439,7 +439,7 @@ def test_machine_discovery_endpoints_and_canonical_origin(app):
     assert b'<link rel=canonical href="https://usethismodel.codefiction.net/api">' in api_docs.data
     spec = client.get("/api/v1/openapi.json").json
     assert spec["openapi"] == "3.1.0"
-    assert spec["servers"] == [{"url": "https://usethismodel.codefiction.net/api/v1"}]
+    assert spec["servers"] == [{"url": "https://usethismodel.codefiction.net"}]
     assert "/api/v1/models" in spec["paths"]
     assert "/api/v1/models/{slug}" in spec["paths"]
 
