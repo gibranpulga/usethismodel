@@ -6,7 +6,14 @@ import pytest
 
 from app import create_app
 from app.data_snapshot import apply_snapshot, encode, snapshot
-from app.data_update import archive_historical_observations, priority, update, write_outputs
+from app.data_update import (
+    archive_historical_observations,
+    deduplicate_pending_reviews,
+    priority,
+    source_for_url,
+    update,
+    write_outputs,
+)
 from app.db import get_db
 
 NOW = "2026-09-20T12:00:00+00:00"
@@ -66,6 +73,20 @@ def test_historical_observations_are_archived_with_provenance_and_compacted(db, 
     with sqlite3.connect(tmp_path / 'history' / 'observations.sqlite3') as archive:
         review = archive.execute("SELECT row_json FROM archived_reviews WHERE id='resolved-test'").fetchone()[0]
     assert json.loads(review)['resolution_note'] == 'accepted'
+
+
+def test_identical_pending_review_items_are_collapsed_but_different_evidence_stays(db):
+    values = ('offering:7','input_price','2','3','["https://source.test/pricing"]','source disagreement')
+    for ident, evidence in [('duplicate-a','Same figures'),('duplicate-b','Same figures'),('real-alternative','Different source detail')]:
+        db.execute("""INSERT INTO review_queue
+          (id,entity,proposed_change,current_value,proposed_value,sources,evidence,confidence,reason,status,created_at)
+          VALUES(?,?,?,?,?,?,?,'MEDIUM',?,'PENDING',?)""",
+          (ident,*values[:5],evidence,values[5],NOW))
+    with db:
+        removed=deduplicate_pending_reviews(db)
+    assert removed==1
+    remaining={row[0] for row in db.execute("SELECT id FROM review_queue WHERE status='PENDING'")}
+    assert remaining=={'duplicate-a','real-alternative'}
 
 
 def test_documentation_source_revision_is_review_only(db, monkeypatch):
@@ -431,6 +452,12 @@ def test_equal_numeric_values_are_not_conflicts(db):
     assert not [r for r in report['Conflicts'] if r['entity'] == f'offering:{oid}']
 
 
+def test_openrouter_api_price_source_remains_aggregator_observed():
+    source = source_for_url('https://openrouter.ai/api/v1/models', 'official_provider')
+    assert source == 'openrouter'
+    assert priority(source, 'input_price') > priority('official_provider', 'input_price')
+
+
 def test_small_listing_removals_queue_expiry_review_without_erasing_prices(db):
     run(db, [record(api_id=f'model-{i}') for i in range(12)])
     report = run(db, [record(api_id=f'model-{i}') for i in range(11)], LATER)
@@ -442,9 +469,11 @@ def test_snapshot_replacement_avoids_quadratic_foreign_key_scans(db, tmp_path):
     # Production has 100k observations. Deleting parents before their selections
     # made a second deployment exceed health-check timeouts despite valid data.
     with db:
-        for ident in range(1, 1501):
+        first_id = db.execute('SELECT COALESCE(MAX(id),0)+1 FROM data_observations').fetchone()[0]
+        for ident in range(first_id, first_id + 1500):
             db.execute("INSERT INTO data_observations(id,entity,field,source,source_url,value_json,priority,observed_at,evidence) VALUES(?,?,'test','test','https://example.test','1',60,?,'fixture')", (ident, f'fixture:{ident}', NOW))
             db.execute("INSERT INTO selected_facts VALUES(?,'test',?)", (f'fixture:{ident}', ident))
+    expected_selected = db.execute('SELECT count(*) FROM selected_facts').fetchone()[0]
     path = tmp_path / 'snapshot.json'
     path.write_text(encode(snapshot(db)))
     calls = 0
@@ -459,7 +488,7 @@ def test_snapshot_replacement_avoids_quadratic_foreign_key_scans(db, tmp_path):
         apply_snapshot(db, path)
     finally:
         db.set_progress_handler(None, 0)
-    assert db.execute('SELECT count(*) FROM selected_facts').fetchone()[0] == 1500
+    assert db.execute('SELECT count(*) FROM selected_facts').fetchone()[0] == expected_selected
 
 
 def test_published_snapshot_is_reconciled_before_new_fetch(db, tmp_path, monkeypatch):

@@ -35,7 +35,7 @@ def test_database_initializes_all_migrations(app):
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
 
-        assert migrations == [(i,) for i in range(1, 24)]
+        assert migrations == [(i,) for i in range(1, 25)]
     assert {
         "models",
         "providers",
@@ -186,7 +186,13 @@ def test_offering_price_and_source_provenance_are_separate(app):
             FROM provider_offerings o JOIN pricing_records pr ON pr.offering_id=o.id
             WHERE o.api_model_id='glm-5.3' GROUP BY o.id""").fetchone()
     assert result["prices"] >= 2
-    assert result["sources"] == 1
+    assert result["sources"] >= 2
+    with app.app_context():
+        sources = get_db().execute("""SELECT DISTINCT s.source_type FROM provider_offerings o
+            JOIN pricing_records pr ON pr.offering_id=o.id JOIN sources s ON s.id=pr.source_id
+            WHERE o.api_model_id='glm-5.3'""").fetchall()
+    assert "official_provider" in {row[0] for row in sources}
+    assert len(sources) > 1
 
 
 def test_compatibility_is_fact_derived_and_configuration_aware(app):
@@ -475,6 +481,51 @@ def test_free_route_discloses_exact_provider_endpoint_and_caveats(client):
     assert b"200,000" in response.data
     assert b"50 requests/day" in response.data
     assert b"Last verified: 2026-09-29" in response.data
+    assert b"Aggregator-observed" in response.data
+
+
+def test_first_party_price_provenance_tiers_and_batch_classes_are_public(app, client):
+    with app.app_context():
+        from pathlib import Path
+        apply_snapshot(get_db(), Path(__file__).resolve().parents[1] / "data" / "catalog.json")
+    openai = client.get("/api/v1/models/openai/gpt-6-sol").json["data"]["routes"]
+    route = next(row for row in openai if row["provider"]["name"] == "OpenAI")
+    assert route["pricing"]["source_label"] == "Official provider price"
+    classes = route["pricing"]["classes"]
+    assert {row["price_type"] for row in classes} >= {"INPUT", "OUTPUT", "CACHE_READ", "CACHE_WRITE"}
+    tiers = [row for row in classes if row["price_type"] == "INPUT"]
+    assert {(row["amount"], row["context_threshold"]) for row in tiers} == {(2, None), (4, 200000)}
+    assert all(row["source_type"] == "official_provider" for row in classes)
+    with app.app_context():
+        assert get_db().execute("""SELECT 1 FROM pricing_records WHERE offering_id=?
+            AND valid_until IS NOT NULL LIMIT 1""", (route["id"],)).fetchone()
+
+    google = client.get("/api/v1/models/gemini-3.1-pro-preview").json["data"]["routes"]
+    batch = [price for route in google for price in route["pricing"]["classes"]
+             if price["price_type"] in {"BATCH_INPUT", "BATCH_OUTPUT"}]
+    assert batch and all(price["source_type"] == "official_provider" for price in batch)
+    assert all("BATCH" in price["price_type"] for price in batch)
+
+    qwen = client.get("/api/v1/models/alibaba/qwen3.8-max").json["data"]["routes"]
+    alibaba_prices = {row["provider"]["name"]: row["pricing"]["classes"] for row in qwen
+                      if row["provider"]["name"] in {"Alibaba", "Alibaba (China)"}}
+    assert {"Alibaba", "Alibaba (China)"} <= alibaba_prices.keys()
+    standard = next(row for row in alibaba_prices["Alibaba"] if row["price_type"] == "INPUT")
+    batch_input = next(row for row in alibaba_prices["Alibaba"] if row["price_type"] == "BATCH_INPUT")
+    china = next(row for row in alibaba_prices["Alibaba (China)"] if row["price_type"] == "INPUT")
+    assert (standard["amount"], batch_input["amount"], china["amount"]) == (2, 1, 1.65)
+    assert "China (Beijing)" in china["price_note"]
+
+    with app.app_context():
+        minimax = get_db().execute("""SELECT ends_at,promotion_current_amount,promotion_reference_amount,
+            promotion_discount_percent FROM offers WHERE title LIKE 'MiniMax Token Plan annual billing:%'""").fetchone()
+        zai = get_db().execute("""SELECT ends_at,promotion_current_amount,promotion_reference_amount
+            FROM offers WHERE title LIKE 'GLM-5.3 cached input storage:%'""").fetchone()
+    assert tuple(minimax) == (None, 200, 240, 16.6667)
+    assert tuple(zai) == (None, 0, None)
+    deals = client.get("/deals?provider=MiniMax%20Token%20Plan%20%28minimax.io%29")
+    assert deals.status_code == 200
+    assert b"Not published" in deals.data
 
 
 def test_media_routes_keep_native_pricing_units_and_features(client):

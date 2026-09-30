@@ -347,9 +347,11 @@ def route_rows(db, filters=None):
           (SELECT url FROM sources WHERE id=o.source_id) route_source_url,
           m.canonical_name,m.canonical_slug,m.modality,m.open_weights,m.status,m.released_at,m.identity_kind,
           COALESCE(l.name,m.vendor) lab_name,COALESCE(cp.id,p.id) provider_id,COALESCE(cp.name,p.name) provider_name,
-          (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) input_price,
-          (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='OUTPUT' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) output_price,
-          (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='CACHE_READ' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) cache_read_price,
+          (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) input_price,
+          (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='OUTPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) output_price,
+          (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='CACHE_READ' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) cache_read_price,
+          (SELECT CASE WHEN s.source_type IN ('official_provider','official_docs','official_metadata') AND lower(s.name) NOT LIKE '%openrouter%' THEN 'official_provider' ELSE 'aggregator_observed' END FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) input_price_source_type,
+          (SELECT CASE WHEN s.source_type IN ('official_provider','official_docs','official_metadata') AND lower(s.name) NOT LIKE '%openrouter%' THEN 'official_provider' ELSE 'aggregator_observed' END FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id WHERE pr.offering_id=o.id AND pr.price_type='OUTPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) output_price_source_type,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type NOT IN ('INPUT','OUTPUT','CACHE_READ','CACHE_WRITE','BATCH_INPUT','BATCH_OUTPUT') AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) media_price,
           (SELECT unit FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type NOT IN ('INPUT','OUTPUT','CACHE_READ','CACHE_WRITE','BATCH_INPUT','BATCH_OUTPUT') AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) media_price_unit,
           (SELECT price_type FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type NOT IN ('INPUT','OUTPUT','CACHE_READ','CACHE_WRITE','BATCH_INPUT','BATCH_OUTPUT') AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) media_price_type,
@@ -433,11 +435,13 @@ def offer_rows(db, include_expired=False):
     return [dict(r) for r in db.execute(f"""
       SELECT x.*,p.name provider_name,o.api_model_id,m.canonical_name,o.tool_support,
         o.context_limit,o.access_semantics,o.access_requirement,o.rate_limit_note,o.privacy_caveat route_privacy_caveat,
-        rv.upstream_provider,rv.provider_tag,rv.endpoint_status,rv.quantization
+        rv.upstream_provider,rv.provider_tag,rv.endpoint_status,rv.quantization,
+        s.name source_name,s.url source_url,s.source_type source_type
       FROM offers x JOIN providers p ON p.id=x.provider_id
       LEFT JOIN provider_offerings o ON o.id=x.offering_id
       LEFT JOIN models m ON m.id=o.model_id
       LEFT JOIN openrouter_route_variants rv ON rv.id=x.route_variant_id
+      LEFT JOIN sources s ON s.id=x.source_id
       WHERE {condition}
       ORDER BY x.status='ACTIVE' DESC,x.last_verified_at DESC,p.name,x.title
     """).fetchall()]

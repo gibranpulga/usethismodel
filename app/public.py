@@ -110,6 +110,12 @@ def _source(row):
 
 
 def _route_json(row, compatibility=None):
+    price_classes = [dict(price) for price in get_db().execute(
+      """SELECT pr.price_type,pr.amount,pr.currency,pr.unit,pr.context_threshold,
+                pr.valid_from,pr.price_note,s.name source_name,s.url source_url,s.source_type
+         FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id
+         WHERE pr.offering_id=? AND pr.valid_until IS NULL
+         ORDER BY pr.price_type,pr.context_threshold""", (row["offering_id"],))]
     media_prices = [dict(price) for price in get_db().execute("""SELECT price_type,amount,currency,unit,
       context_threshold,valid_from,price_note,promotional FROM pricing_records WHERE offering_id=?
       AND valid_until IS NULL AND price_type NOT IN ('INPUT','OUTPUT','CACHE_READ','CACHE_WRITE','BATCH_INPUT','BATCH_OUTPUT')
@@ -136,6 +142,10 @@ def _route_json(row, compatibility=None):
             "input_per_million_tokens": row["input_price"],
             "output_per_million_tokens": row["output_price"],
             "cache_read_per_million_tokens": row["cache_read_price"],
+            "input_source_type": row.get("input_price_source_type") or "unknown",
+            "output_source_type": row.get("output_price_source_type") or "unknown",
+            "source_label": ("Official provider price" if "official" in (row.get("input_price_source_type") or "") or "official" in (row.get("output_price_source_type") or "") else "Aggregator-observed price" if row.get("input_price_source_type") or row.get("output_price_source_type") else "Unknown"),
+            "classes": price_classes,
             "media": ({"amount": row["media_price"], "unit": row["media_price_unit"],
                        "type": row["media_price_type"]} if row["media_price"] is not None else None),
             "media_prices": media_prices,

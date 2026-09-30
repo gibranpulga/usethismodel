@@ -1,0 +1,171 @@
+{
+  "generated_at": "2026-09-30",
+  "prioritized_providers": [
+    "OpenAI",
+    "Anthropic",
+    "Google",
+    "DeepSeek",
+    "Z.ai",
+    "Alibaba",
+    "Alibaba (China)",
+    "Mistral",
+    "Moonshot AI",
+    "MiniMax (minimax.io)",
+    "xAI"
+  ],
+  "metric_scope": "Route counts are restricted to the prioritized official providers. Official facts are HIGH reliability pricing rows linked to official_provider sources.",
+  "before": {
+    "models": 3306,
+    "routes": 9329,
+    "providers_with_official_pricing": 0,
+    "official_priced_routes": 0,
+    "pending_reviews": 2050,
+    "same_source_conflicts": 1317
+  },
+  "after": {
+    "models": 3306,
+    "routes": 9329,
+    "providers_with_official_pricing": 8,
+    "official_priced_routes": 10,
+    "pending_reviews": 2055,
+    "same_source_conflicts": 1317,
+    "aggregator_only_priced_routes": 422,
+    "routes_with_official_pricing": 10,
+    "routes_with_aggregator_only_pricing": 422,
+    "open_official_conflicts": 5,
+    "official_fact_rows": 54,
+    "unresolved_real_source_disagreements": 561
+  },
+  "duplicate_review_items_removed": 0,
+  "pending_review_groups_after": [
+    {
+      "class": "benchmark",
+      "count": 3
+    },
+    {
+      "class": "compatibility",
+      "count": 1
+    },
+    {
+      "class": "identity",
+      "count": 144
+    },
+    {
+      "class": "other",
+      "count": 7
+    },
+    {
+      "class": "pricing_disagreement",
+      "count": 568
+    },
+    {
+      "class": "release_date",
+      "count": 7
+    },
+    {
+      "class": "route_removal",
+      "count": 8
+    },
+    {
+      "class": "same_source_conflict",
+      "count": 1317
+    }
+  ],
+  "active_promotions_and_offers": [
+    {
+      "source_type": "machine-readable catalog",
+      "provider": "OpenRouter",
+      "active_count": 117
+    },
+    {
+      "source_type": "official_docs",
+      "provider": "OpenAI",
+      "active_count": 1
+    },
+    {
+      "source_type": "official_provider",
+      "provider": "MiniMax Token Plan (minimax.io)",
+      "active_count": 1
+    },
+    {
+      "source_type": "official_provider",
+      "provider": "OpenRouter",
+      "active_count": 1
+    },
+    {
+      "source_type": "official_provider",
+      "provider": "Z.ai",
+      "active_count": 1
+    }
+  ],
+  "official_promotion_count": 2,
+  "sources_researched": [
+    {
+      "provider": "OpenAI",
+      "source": "https://platform.openai.com/pricing",
+      "status": "implemented",
+      "reason": "Exact public model IDs; standard, cache and context tiers."
+    },
+    {
+      "provider": "Google",
+      "source": "https://ai.google.dev/gemini-api/docs/pricing",
+      "status": "implemented",
+      "reason": "Exact model ID; standard, batch, cache and context classes kept separately."
+    },
+    {
+      "provider": "xAI",
+      "source": "https://docs.x.ai/developers/pricing",
+      "status": "implemented",
+      "reason": "Exact Grok 4.6 ID; cached input and long-context prices; global endpoint."
+    },
+    {
+      "provider": "MiniMax",
+      "source": "https://platform.minimax.io/subscribe/token-plan?tab=api-enterprise",
+      "status": "implemented",
+      "reason": "Exact M3 route with 512K context tiers; Token Plan offer is separate from PAYG API pricing."
+    },
+    {
+      "provider": "Z.ai",
+      "source": "https://docs.z.ai/guides/overview/pricing",
+      "status": "implemented",
+      "reason": "Exact GLM-5.3 route, cache reads and limited-time-free storage offer."
+    },
+    {
+      "provider": "Mistral",
+      "source": "https://docs.mistral.ai/inference/pricing",
+      "status": "implemented",
+      "reason": "Exact Large 3 and Medium 3.5 API IDs with cache rates."
+    },
+    {
+      "provider": "Alibaba/Qwen",
+      "source": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+      "status": "implemented",
+      "reason": "Exact Qwen3.8-Max API ID; separate international and China prices and explicit international batch discount."
+    },
+    {
+      "provider": "DeepSeek",
+      "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "status": "researched_deferred",
+      "reason": "Rates change by peak/off-peak time; current records have no safe time-based tier."
+    },
+    {
+      "provider": "Anthropic",
+      "source": "https://claude.com/pricing",
+      "status": "researched_deferred",
+      "reason": "Official docs pricing available in search was stale relative to active API model IDs; no old rates imported."
+    },
+    {
+      "provider": "Moonshot/Kimi",
+      "source": "https://platform.moonshot.ai/docs",
+      "status": "researched_deferred",
+      "reason": "No current official structured API pricing table verified for a direct route in this review."
+    }
+  ],
+  "method": "Curated source-backed facts are imported by a versioned migration and enter selected_facts/data_observations. Existing aggregator rows remain in price history; real disagreements remain pending. Dynamic page scraping was not added where page layout or billing dimensions cannot be parsed fail-closed.",
+  "limitations": [
+    "First-party facts cover 10 exact routes across 8 provider entries, not every route for those providers.",
+    "No automatic refresh adapter was added for these dynamic official pricing pages; changes require a reviewed source-backed update.",
+    "The schema can express context tiers and batch/cache classes but not time-of-day modifiers.",
+    "Unresolved source disagreements are retained for review; same-source distinct values remain pending."
+  ]
+}

@@ -1,7 +1,4 @@
 [
-{"entity":"offering:3006","field":"input_price","observation_id":84077},
-{"entity":"offering:3006","field":"max_output_tokens","observation_id":34849},
-{"entity":"offering:3006","field":"output_price","observation_id":84082},
 {"entity":"offering:3006","field":"reasoning","observation_id":56906},
 {"entity":"offering:3006","field":"structured_output","observation_id":34851},
 {"entity":"offering:3006","field":"tool_calling","observation_id":34850},
@@ -998,5 +995,8 @@
 {"entity":"offering:3108","field":"reasoning","observation_id":57008},
 {"entity":"offering:3108","field":"structured_output","observation_id":35251},
 {"entity":"offering:3108","field":"tool_calling","observation_id":35250},
-{"entity":"offering:3108","field":"vision","observation_id":85947}
+{"entity":"offering:3108","field":"vision","observation_id":85947},
+{"entity":"offering:3109","field":"cache_read_price","observation_id":85949},
+{"entity":"offering:3109","field":"context_window","observation_id":35252},
+{"entity":"offering:3109","field":"input_price","observation_id":85952}
 ]

@@ -13,7 +13,11 @@ from pathlib import Path
 from .catalog import _model, _provider, _source
 from .data_snapshot import encode, snapshot_text
 
-PRICES = {'input_price': 'INPUT', 'output_price': 'OUTPUT', 'cache_read_price': 'CACHE_READ', 'cache_write_price': 'CACHE_WRITE'}
+PRICES = {
+    'input_price': 'INPUT', 'output_price': 'OUTPUT',
+    'cache_read_price': 'CACHE_READ', 'cache_write_price': 'CACHE_WRITE',
+    'batch_input_price': 'BATCH_INPUT', 'batch_output_price': 'BATCH_OUTPUT',
+}
 COLUMNS = {'context_window': 'context_limit', 'max_output_tokens': 'max_output_tokens', 'tool_calling': 'tool_support', 'structured_output': 'structured_output_support'}
 CATEGORIES = ['New models', 'New provider offerings', 'Price increases', 'Price reductions', 'New free routes', 'Expired free routes', 'New offers', 'Expired offers', 'Harness changes', 'Benchmark results imported', 'Source failures', 'Conflicts', 'Manual-review items']
 
@@ -22,6 +26,8 @@ def priority(source, field):
     """Priority is assigned here, never trusted from an incoming payload."""
     if field.startswith('benchmark:'):
         return 10 if source == 'benchmark_publisher' else 100
+    if source.startswith('official:'):
+        return 8
     return {'official_announcement': 5, 'official_provider': 10, 'official_docs': 10, 'official_metadata': 15, 'openrouter': 20, 'models.dev': 30, 'litellm': 40, 'legacy-unverified': 90}.get(source, 60)
 
 
@@ -70,9 +76,15 @@ def valid_value(field, value):
 
 
 def review(db, report, now, entity, field, current, proposed, sources, reason, evidence='', confidence='LOW'):
+    sources = sorted(set(sources or []))
     values = (entity, field, encode(current), encode(proposed), encode(sources), reason)
     key = hashlib.sha256(encode((entity, field, encode(proposed), encode(sources), reason)).encode()).hexdigest()[:24]
-    if not db.execute('SELECT 1 FROM review_queue WHERE id=?', (key,)).fetchone():
+    existing = db.execute(
+        "SELECT id FROM review_queue WHERE status='PENDING' AND entity=? AND proposed_change=? "
+        "AND COALESCE(current_value,'')=? AND COALESCE(proposed_value,'')=? AND sources=? AND reason=? LIMIT 1",
+        (entity, field, values[2] or '', values[3] or '', values[4], reason),
+    ).fetchone()
+    if not existing and not db.execute('SELECT 1 FROM review_queue WHERE id=?', (key,)).fetchone():
         db.execute('INSERT INTO review_queue(id,entity,proposed_change,current_value,proposed_value,sources,evidence,confidence,reason,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)', (key, *values[:5], evidence or reason, confidence, reason, now))
         report['Manual-review items'].append({'id': key, 'entity': entity, 'field': field, 'reason': reason})
     return key
@@ -114,23 +126,22 @@ def quarantine_legacy(db, report, now):
 
 
 def seed_observations(db, now, report):
-    if db.execute('SELECT 1 FROM data_observations WHERE accepted=1 LIMIT 1').fetchone():
-        return
-    for row in db.execute('SELECT pr.*,s.url,s.source_type FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id WHERE valid_until IS NULL ORDER BY pr.id').fetchall():
-        field = next((k for k, v in PRICES.items() if v == row['price_type']), None)
-        if field:
-            source = source_for_url(row['url'], row['source_type'])
-            observe(db, f"offering:{row['offering_id']}", field, source, row['url'] or '', row['source_id'], row['amount'], now, evidence='Existing catalog price; original row retained')
-    for row in db.execute('SELECT o.*,s.url,s.source_type FROM provider_offerings o LEFT JOIN sources s ON s.id=o.source_id').fetchall():
-        for field, column in COLUMNS.items():
-            value = row[column]
-            if value in ('YES', 'NO'):
-                value = value == 'YES'
-            if valid_value(field, value):
-                observe(db, f"offering:{row['id']}", field, source_for_url(row['url'], row['source_type']), row['url'] or '', row['source_id'], value, now, evidence='Existing catalog metadata')
-    for row in db.execute('SELECT c.*,s.url,s.source_type FROM offering_capabilities c LEFT JOIN sources s ON s.id=c.source_id').fetchall():
-        if row['capability'] in ('vision', 'reasoning') and row['state'] in ('YES', 'NO'):
-            observe(db, f"offering:{row['offering_id']}", row['capability'], source_for_url(row['url'], row['source_type']), row['url'] or '', row['source_id'], row['state'] == 'YES', now, evidence='Existing route capability with original provenance')
+    if not db.execute('SELECT 1 FROM data_observations WHERE accepted=1 LIMIT 1').fetchone():
+        for row in db.execute('SELECT pr.*,s.url,s.source_type FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id WHERE valid_until IS NULL ORDER BY pr.id').fetchall():
+            field = next((k for k, v in PRICES.items() if v == row['price_type']), None)
+            if field:
+                source = source_for_url(row['url'], row['source_type'])
+                observe(db, f"offering:{row['offering_id']}", field, source, row['url'] or '', row['source_id'], row['amount'], now, evidence='Existing catalog price; original row retained')
+        for row in db.execute('SELECT o.*,s.url,s.source_type FROM provider_offerings o LEFT JOIN sources s ON s.id=o.source_id').fetchall():
+            for field, column in COLUMNS.items():
+                value = row[column]
+                if value in ('YES', 'NO'):
+                    value = value == 'YES'
+                if valid_value(field, value):
+                    observe(db, f"offering:{row['id']}", field, source_for_url(row['url'], row['source_type']), row['url'] or '', row['source_id'], value, now, evidence='Existing catalog metadata')
+        for row in db.execute('SELECT c.*,s.url,s.source_type FROM offering_capabilities c LEFT JOIN sources s ON s.id=c.source_id').fetchall():
+            if row['capability'] in ('vision', 'reasoning') and row['state'] in ('YES', 'NO'):
+                observe(db, f"offering:{row['offering_id']}", row['capability'], source_for_url(row['url'], row['source_type']), row['url'] or '', row['source_id'], row['state'] == 'YES', now, evidence='Existing route capability with original provenance')
     # Seed dates and benchmark scores have no per-value supporting evidence. Preserve,
     # explicitly flag, and do not elevate a publisher homepage to verified evidence.
     for row in db.execute('SELECT id,released_at FROM models WHERE released_at IS NOT NULL').fetchall():
@@ -140,15 +151,32 @@ def seed_observations(db, now, report):
         review(db, report, now, f"benchmark_result:{row['id']}", 'score', row['score'], None, [row['url']], 'Legacy benchmark score needs publisher result evidence, version and harness verification')
 
 
+def deduplicate_pending_reviews(db):
+    """Remove only byte-equivalent pending items, retaining one complete record."""
+    seen = set()
+    remove = []
+    rows = db.execute("SELECT * FROM review_queue WHERE status='PENDING' ORDER BY created_at,id").fetchall()
+    for row in rows:
+        key = (row['entity'], row['proposed_change'], row['current_value'], row['proposed_value'],
+               encode(sorted(set(json.loads(row['sources']) if row['sources'] else []))), row['evidence'],
+               row['confidence'], row['reason'])
+        if key in seen:
+            remove.append((row['id'],))
+        else:
+            seen.add(key)
+    db.executemany("DELETE FROM review_queue WHERE id=? AND status='PENDING'", remove)
+    return len(remove)
+
+
 def source_for_url(url, source_type=None):
-    if source_type in {"official_provider", "official_docs", "official_metadata", "official_announcement", "benchmark_publisher"}:
-        return source_type
     if url and 'models.dev/' in url:
         return 'models.dev'
     if url and 'openrouter.ai/api/' in url:
         return 'openrouter'
     if url and 'litellm' in url:
         return 'litellm'
+    if source_type in {"official_provider", "official_docs", "official_metadata", "official_announcement", "benchmark_publisher"}:
+        return source_type
     return 'legacy-unverified'
 
 
@@ -304,6 +332,7 @@ def update(db, records, failures, manifests, now=None):
     now = now or datetime.now(timezone.utc).isoformat(timespec='seconds')
     report = {category: [] for category in CATEGORIES}
     report['Source failures'].extend(failures)
+    report['Manual-review items'].extend({'deduplicated': n} for n in [deduplicate_pending_reviews(db)] if n)
     quarantine_legacy(db, report, now)
     seed_observations(db, now, report)
     records = guard_sources(db, records, manifests, report, now)
@@ -372,6 +401,13 @@ def update(db, records, failures, manifests, now=None):
             entity = f'model:{mid}' if field in ('release_date', 'open_weights') else f'offering:{oid}'
             proposals[(entity, field, source)].append((value, record['source_url'], sid))
     for (entity, field, source), entries in sorted(proposals.items()):
+        # Multiple IDs in the same source may be aliases for one route. Collapse
+        # byte-for-byte equivalent facts before conflict detection; distinct
+        # values remain quarantined and visible for review.
+        unique_entries = {}
+        for value, url, sid in entries:
+            unique_entries.setdefault(encode(value), (value, url, sid))
+        entries = list(unique_entries.values())
         distinct = {encode(value) for value, _, _ in entries}
         ambiguous = len(distinct) > 1
         old = db.execute('SELECT d.value_json FROM selected_facts s JOIN data_observations d ON d.id=s.observation_id WHERE s.entity=? AND s.field=?', (entity, field)).fetchone()
@@ -379,7 +415,7 @@ def update(db, records, failures, manifests, now=None):
         for value, url, sid in entries:
             accepted = valid_value(field, value) and not ambiguous
             reason = 'Conflicting values within one source; retained previous value' if ambiguous else 'Invalid or unsupported structured value quarantined'
-            if accepted and field in PRICES and current and value > current * 10:
+            if accepted and field in PRICES and current is not None and current > 0 and value > current * 10:
                 accepted = False
                 reason = 'Price increased by more than 10x without an explanation; manual review required'
             observe(db, entity, field, source, url, sid, value, now, accepted, reason if not accepted else 'Structured source field')

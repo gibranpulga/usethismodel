@@ -100,16 +100,22 @@ def source_health_rows(db):
 def review_triage(db):
     """Summarize pending review work without changing or hiding ambiguity."""
     counts = {}
+    examples = {}
     for row in db.execute(
-        "SELECT triage_class,reason FROM review_queue WHERE status='PENDING' ORDER BY id"
+        "SELECT id,entity,proposed_change,triage_class,reason,evidence,sources,confidence,created_at "
+        "FROM review_queue WHERE status='PENDING' ORDER BY id"
     ):
-        triage_class = row["triage_class"] or _triage_class(row["reason"])
+        triage_class = _triage_class(row["reason"])
+        if triage_class == "other" and row["triage_class"]:
+            triage_class = row["triage_class"]
         counts[triage_class] = counts.get(triage_class, 0) + 1
+        examples.setdefault(triage_class, []).append(dict(row))
     groups = [
         {
             "triage_class": triage_class,
             "count": count,
             "auto_resolvable": triage_class == "quarantined_invalid_legacy",
+            "evidence": examples[triage_class][:5],
         }
         for triage_class, count in sorted(counts.items())
     ]
@@ -300,20 +306,27 @@ def _triage_class(reason):
     reason = reason or ""
     if _safe_reason(reason):
         return "quarantined_invalid_legacy"
-    if reason.startswith("Conflicting values within one source"):
-        return "within_source_conflict"
-    if reason.startswith("Sources disagree") or reason.startswith("Price increased by more than 10x"):
-        return "source_disagreement"
-    if reason.startswith("Similar name has a different canonical ID"):
-        return "identity_ambiguity"
-    if reason.startswith("Route missing from successful source"):
-        return "possible_route_removal"
-    if reason.startswith("Legacy release date"):
-        return "release_evidence_gap"
-    if reason.startswith("Legacy benchmark score"):
-        return "benchmark_evidence_gap"
-    if reason.startswith("Official documentation changed"):
-        return "harness_change"
+    lower = reason.lower()
+    if "conflicting values within one source" in lower:
+        return "same_source_conflict"
+    if "ambiguous source aliases" in lower or "duplicated observation" in lower:
+        return "duplicated_observation"
+    if "sources disagree" in lower or "price increased by more than 10x" in lower or "pricing disagree" in lower:
+        return "pricing_disagreement"
+    if "canonical identity" in lower or "canonical id" in lower or "identity" in lower:
+        return "identity"
+    if "schema" in lower or "catalog collapsed" in lower or "provider disappeared" in lower:
+        return "source_schema_change"
+    if "route missing" in lower or "listing removed" in lower:
+        return "route_removal"
+    if "release date" in lower or "release_date" in lower:
+        return "release_date"
+    if "benchmark" in lower or "publisher result" in lower:
+        return "benchmark"
+    if "compatibility" in lower or "harness" in lower:
+        return "compatibility"
+    if "promotion" in lower or "offer" in lower:
+        return "promotion"
     return "other"
 
 

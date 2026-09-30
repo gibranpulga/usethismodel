@@ -112,7 +112,7 @@ def test_review_triage_preserves_ambiguity_and_only_safe_quarantines_resolve(db)
     assert triage["pending_total"] == 3
     assert {group["triage_class"] for group in triage["groups"]} == {
         "quarantined_invalid_legacy",
-        "source_disagreement",
+        "pricing_disagreement",
     }
 
     assert auto_resolve_safe_reviews(db, "2026-09-29T12:00:00+00:00") == 1
