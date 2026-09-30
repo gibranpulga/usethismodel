@@ -372,9 +372,10 @@ def update(db, records, failures, manifests, now=None):
         resolve(db, entity, field, report, now)
     for row in db.execute('SELECT o.id,o.free_status,p.name provider_name FROM provider_offerings o JOIN providers p ON p.id=o.provider_id').fetchall():
         prices = dict(db.execute("SELECT price_type,amount FROM pricing_records WHERE offering_id=? AND valid_until IS NULL AND price_type IN ('INPUT','OUTPUT') ORDER BY id", (row['id'],)).fetchall())
-        status = 'FREE' if prices.get('INPUT') == 0 and prices.get('OUTPUT') == 0 else 'PAID' if any(v > 0 for v in prices.values()) else 'UNKNOWN'
+        price_status = 'FREE' if prices.get('INPUT') == 0 and prices.get('OUTPUT') == 0 else 'PAID' if any(v > 0 for v in prices.values()) else 'UNKNOWN'
         bundled = any(term in row['provider_name'].lower() for term in ('token plan', 'coding plan', 'gitlab duo', 'opencode go'))
-        access = ('INCLUDED_WITH_SUBSCRIPTION' if bundled else 'FREE_API') if status == 'FREE' else status + '_API' if status == 'PAID' else 'UNKNOWN'
+        status = 'PAID' if bundled and price_status == 'FREE' else price_status
+        access = ('INCLUDED_WITH_SUBSCRIPTION' if bundled else 'FREE_API') if price_status == 'FREE' else price_status + '_API' if price_status == 'PAID' else 'UNKNOWN'
         db.execute('UPDATE provider_offerings SET access_semantics=?,access_requirement=? WHERE id=?',
                    (access, row['provider_name'] if bundled else None, row['id']))
         if row['free_status'] != status:

@@ -32,7 +32,7 @@ def test_database_initializes_all_migrations(app):
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
 
-        assert migrations == [(i,) for i in range(1, 20)]
+        assert migrations == [(i,) for i in range(1, 21)]
     assert {
         "models",
         "providers",
@@ -418,7 +418,8 @@ def test_subscription_included_zero_price_is_not_free(app, client):
         apply_snapshot(db, Path(__file__).resolve().parents[1] / "data" / "catalog.json")
         row = db.execute("SELECT id FROM provider_offerings WHERE access_semantics='INCLUDED_WITH_SUBSCRIPTION' LIMIT 1").fetchone()
         assert row is not None
-        assert db.execute("SELECT access_semantics FROM provider_offerings WHERE id=?", (row["id"],)).fetchone()[0] == "INCLUDED_WITH_SUBSCRIPTION"
+        stored = db.execute("SELECT access_semantics,free_status FROM provider_offerings WHERE id=?", (row["id"],)).fetchone()
+        assert tuple(stored) == ("INCLUDED_WITH_SUBSCRIPTION", "PAID")
         free_ids = {r["offering_id"] for r in route_rows(db, {"free":"1", "tools":"1", "limit":100000})}
         included_ids = {r["offering_id"] for r in route_rows(db, {"included":"1", "limit":100000})}
         assert row["id"] not in free_ids

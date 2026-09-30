@@ -124,6 +124,7 @@ def apply_snapshot(db, path):
                 WHEN free_status='FREE' THEN 'FREE_API'
                 WHEN free_status='PAID' THEN 'PAID_API' ELSE 'UNKNOWN' END,
               access_requirement=CASE WHEN EXISTS (SELECT 1 FROM providers p WHERE p.id=provider_offerings.provider_id AND (lower(p.name) LIKE '%token plan%' OR lower(p.name) LIKE '%coding plan%' OR lower(p.name) LIKE '%gitlab duo%' OR lower(p.name) LIKE '%opencode go%')) THEN (SELECT p.name FROM providers p WHERE p.id=provider_offerings.provider_id) ELSE NULL END""")
+            db.execute("UPDATE provider_offerings SET free_status='PAID' WHERE access_semantics='INCLUDED_WITH_SUBSCRIPTION' AND free_status='FREE'")
         from .data_update import validate
         validate(db)
         db.execute('INSERT INTO applied_snapshots(digest) VALUES(?)', (digest,))
