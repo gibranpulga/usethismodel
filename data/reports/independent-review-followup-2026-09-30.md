@@ -87,7 +87,7 @@ production host, SSH port, server account, Coolify application/volume IDs, and
 private filesystem examples with placeholders/private configuration. Those
 details were already present in Git history; history was not rewritten.
 
-The credential-pattern scan covered 44 reachable commits and found no AWS,
+The credential-pattern scan covered 45 reachable commits and found no AWS,
 Google, GitHub, OpenAI-format API keys, or private-key headers. The current
 working tree scan found no credential patterns. This is a pattern scan, not a
 proof against every possible secret encoding.
