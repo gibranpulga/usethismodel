@@ -43,7 +43,9 @@ def compatibility_for(
     workflow_id: int | None = None,
 ):
     offering = db.execute(
-        """SELECT o.*, p.name provider_name, m.canonical_name
+        """SELECT o.*, p.name provider_name, m.canonical_name,
+                  (SELECT name FROM sources WHERE id=o.source_id) route_source_name,
+                  (SELECT url FROM sources WHERE id=o.source_id) route_source_url
            FROM provider_offerings o JOIN providers p ON p.id=o.provider_id
            JOIN models m ON m.id=o.model_id WHERE o.id=?""",
         (offering_id,),
@@ -122,6 +124,56 @@ def compatibility_for(
     # but cannot manufacture MCP support in a harness that lacks it.
     if override and not mcp_workflow:
         return {"status": override["status"], "confidence": "HIGH", "explanation": override["reason"]}
+    # OpenRouter is a documented, explicit harness integration. An exact route
+    # on OpenRouter can be derived for harnesses whose official access-method
+    # record says they support it; this never generalizes to other providers.
+    if offering["provider_name"].lower() == "openrouter":
+        access = db.execute(
+            """SELECT ha.*,s.name source_name,s.url source_url FROM harness_access_methods ha
+               JOIN sources s ON s.id=ha.source_id
+               WHERE ha.harness_id=? AND ha.access_method='OPENROUTER' AND ha.state='YES'""",
+            (harness_id,),
+        ).fetchone()
+        model_is_claude = "claude" in (offering["canonical_name"] or "").lower()
+        if access and (harness["name"] != "Claude Code" or model_is_claude):
+            mcp = "YES" if harness["supports_mcp"] else "NO" if harness["supports_mcp"] == 0 else UNKNOWN
+            if workflow_check and workflow_check["state"] in {"NO", UNKNOWN}:
+                derived_status = "NOT_COMPATIBLE" if workflow_check["state"] == "NO" else UNKNOWN
+            elif mcp_workflow and mcp != "YES":
+                derived_status = "NOT_COMPATIBLE" if mcp == "NO" else UNKNOWN
+            elif offering["tool_support"] == "NO":
+                derived_status = "PARTIAL"
+            elif offering["tool_support"] == UNKNOWN:
+                derived_status = "PARTIAL"
+            else:
+                derived_status = "COMPATIBLE_WITH_CONFIGURATION"
+            return {
+                "status": derived_status,
+                "confidence": "MEDIUM",
+                "derived": True,
+                "explanation": (
+                    f"Harness capability: documented OpenRouter access ({access['note'] or access['access_method']}). "
+                    "Provider interface: OpenRouter route using an OpenRouter API key. "
+                    f"Model tool support: {offering['tool_support']}. MCP required: {'yes' if mcp_workflow else 'no'}; "
+                    "configuration: required. Route reliability is unknown."
+                    + (f" Workflow host: {workflow_check['reason']}" if workflow_check else "")
+                ),
+                "access_method": "OpenRouter API key",
+                "checks": {
+                    "harness_can_use_model": "YES",
+                    "harness_supports_mcp": mcp,
+                    "provider_route_tool_calls": offering["tool_support"],
+                    "tool_call_reliability": UNKNOWN,
+                    "workflow_host": workflow_check["state"] if workflow_check else None,
+                },
+                "source": {"name": access["source_name"], "url": access["source_url"]},
+                "sources": [source for source in [
+                    {"name": access["source_name"], "url": access["source_url"]},
+                    {"name": offering["route_source_name"], "url": offering["route_source_url"]},
+                ] if source["url"]],
+                "verified_at": access["verified_at"],
+                "provider_verified_at": offering["last_verified_at"],
+            }
     provider = db.execute(
         "SELECT * FROM harness_provider_compatibility WHERE harness_id=? AND provider_id=?",
         (harness_id, offering["provider_id"]),

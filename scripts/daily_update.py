@@ -1,6 +1,7 @@
 """Run the daily refresh in an isolated worktree; only Git publication changes production."""
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -115,7 +116,11 @@ class Runner:
         self.git("merge", "--ff-only", commit)
         self.phase = "Coolify deployment trigger"
         deployment = trigger(self.state / "coolify-deploy.json")
-        logging.info("Published %s; Coolify deployment %s triggered", commit, deployment)
+        self.phase = "deployment health verification"
+        from trigger_deploy import verify_health
+        expected_digest = hashlib.sha256((self.work / "data/catalog.json").read_bytes()).hexdigest()
+        health = verify_health(expected_snapshot_digest=expected_digest)
+        logging.info("Published %s; Coolify deployment %s is ready (%s)", commit, deployment, health["readiness"])
         self.cleanup()
 
     def execute(self):
@@ -157,7 +162,8 @@ class Runner:
             backup(backup_path)
             retain(backup_path.parent)
             shutil.copy2(backup_path, self.database)
-            args = [self.python, "-m", "app.data_update", "update", "--database", str(self.database), "--output-dir", "data"]
+            args = [self.python, "-m", "app.data_update", "update", "--database", str(self.database), "--output-dir", "data",
+                    "--history-archive-dir", str(self.state / "history")]
             if (self.work / "data/catalog.json").exists():
                 args.extend(["--base-snapshot", "data/catalog.json"])
             if self.dry_run:

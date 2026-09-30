@@ -26,6 +26,19 @@ MODEL_CATEGORIES = {
 }
 
 
+def normalize_context(value):
+    """Normalize positive token counts and common context-window labels."""
+    raw = str(value).strip().lower().replace(",", "").replace("_", "")
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([km])?\+?", raw)
+    if not match:
+        raise ValueError("invalid context")
+    amount = float(match.group(1))
+    amount *= {None: 1, "k": 1_000, "m": 1_000_000}[match.group(2)]
+    if amount <= 0 or not amount.is_integer():
+        raise ValueError("invalid context")
+    return int(amount)
+
+
 def interpret_search(filters):
     """Translate common finder language into deterministic, shareable facets.
 
@@ -59,6 +72,9 @@ def interpret_search(filters):
     if re.search(r"\bfree\b|\$0", text):
         set_if_empty("free", "1", "Price: $0 route")
         text = re.sub(r"\bfree\b|\$0", " ", text)
+    if re.search(r"\bincluded\s+with\s+(?:a\s+)?subscription\b|subscription[- ]included", text):
+        set_if_empty("included", "1", "Included with subscription")
+        text = re.sub(r"included\s+with\s+(?:a\s+)?subscription|subscription[- ]included", " ", text)
     if re.search(r"\btools?\b|tool[ -]?capable|function calling", text):
         set_if_empty("tools", "1", "Tool calling: yes")
         text = re.sub(r"\btools?\b|tool[ -]?capable|function calling", " ", text)
@@ -133,7 +149,7 @@ def route_rows(db, filters=None):
     """Return provider routes.  Every filter is explicit and URL-safe."""
     filters, _ = interpret_search(filters or {})
     try:
-        limit = min(10_000, max(1, int(filters.get("limit", 100))))
+        limit = min(100_000, max(1, int(filters.get("limit", 100))))
     except (TypeError, ValueError):
         limit = 100
     try:
@@ -179,19 +195,25 @@ def route_rows(db, filters=None):
             try:
                 value = float(filters[key])
             except (TypeError, ValueError):
-                continue
+                raise ValueError(f"Invalid {key} filter: expected a non-negative price.")
+            if value < 0:
+                raise ValueError(f"Invalid {key} filter: expected a non-negative price.")
             clauses.append(f"{field} IS NOT NULL AND {field} <= ?")
             params.append(value)
     for key, column in (("context", "o.context_limit"), ("max_output", "o.max_output_tokens")):
         if filters.get(key):
             try:
-                value = int(filters[key])
+                value = normalize_context(filters[key]) if key == "context" else int(filters[key])
             except (TypeError, ValueError):
-                continue
+                raise ValueError(f"Invalid {key} filter: expected a positive token count.")
+            if value <= 0:
+                raise ValueError(f"Invalid {key} filter: expected a positive token count.")
             clauses.append(f"{column} >= ?")
             params.append(value)
     if filters.get("free") == "1":
-        clauses.append("(input_price=0 AND output_price=0)")
+        clauses.append("(o.access_semantics IN ('FREE_API','FREE_TIER','PROMOTIONAL_FREE','TRIAL_CREDIT') AND input_price=0 AND output_price=0)")
+    if filters.get("included") == "1":
+        clauses.append("o.access_semantics='INCLUDED_WITH_SUBSCRIPTION'")
     if filters.get("deal") == "1":
         clauses.append("EXISTS (SELECT 1 FROM offers x WHERE x.provider_id=p.id AND (x.offering_id IS NULL OR x.offering_id=o.id) AND x.status='ACTIVE' AND (x.starts_at IS NULL OR x.starts_at<=date('now')) AND (x.ends_at IS NULL OR x.ends_at>=date('now')))")
     if filters.get("subscription") == "1":
@@ -224,10 +246,10 @@ def route_rows(db, filters=None):
     elif access == "direct":
         clauses.append("p.name != 'OpenRouter'")
     elif access == "free":
-        clauses.append("(input_price=0 AND output_price=0)")
+        clauses.append("(o.access_semantics IN ('FREE_API','FREE_TIER','PROMOTIONAL_FREE','TRIAL_CREDIT') AND input_price=0 AND output_price=0)")
     sql = f"""
         SELECT o.id offering_id,o.api_model_id,o.context_limit,o.max_output_tokens,o.tool_support,
-          o.structured_output_support,o.free_status,o.caveat,o.fetched_at,m.id model_id,
+          o.structured_output_support,o.free_status,o.access_semantics,o.access_requirement,o.caveat,o.fetched_at,m.id model_id,
           o.rate_limit_note,o.privacy_caveat,o.commercial_use,o.first_seen_at,
           o.lifecycle_status,o.last_seen_at,o.last_verified_at,
           (SELECT name FROM sources WHERE id=o.source_id) route_source_name,

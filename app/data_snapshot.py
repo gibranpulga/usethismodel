@@ -5,7 +5,8 @@ from pathlib import Path
 
 # Operational state is intentionally outside the published catalog snapshot.
 # Snapshot application must never erase local usage counters.
-EXCLUDED = {'schema_migrations', 'applied_snapshots', 'analytics_daily'}
+EXCLUDED = {'schema_migrations', 'applied_snapshots', 'analytics_daily', 'rate_limit_windows'}
+OPTIONAL_SNAPSHOT_TABLES = {'documentation_monitor_state', 'plan_value_history'}
 
 
 def tables(db):
@@ -95,8 +96,13 @@ def apply_snapshot(db, path):
                     raise ValueError('Snapshot shard checksum mismatch')
                 loaded[table].extend(json.loads(content))
         data = {'version': 1, 'tables': loaded}
-    if data.get('version') != 1 or set(data['tables']) != set(tables(db)):
+    expected = set(tables(db))
+    supplied = set(data.get('tables', {}))
+    if (data.get('version') != 1 or not supplied <= expected
+            or expected - supplied - OPTIONAL_SNAPSHOT_TABLES):
         raise ValueError('Catalog snapshot schema mismatch')
+    for table in expected - supplied:
+        data['tables'][table] = []
     db.execute('BEGIN')
     try:
         db.execute('PRAGMA defer_foreign_keys=ON')
@@ -111,6 +117,13 @@ def apply_snapshot(db, path):
                     raise ValueError('Unknown snapshot column')
                 columns = ','.join(f'"{c}"' for c in row)
                 db.execute(f'INSERT INTO "{table}" ({columns}) VALUES ({",".join("?" for _ in row)})', list(row.values()))
+        if 'access_semantics' in {r[1] for r in db.execute('PRAGMA table_info(provider_offerings)')}:
+            db.execute("""UPDATE provider_offerings SET
+              access_semantics=CASE
+                WHEN free_status='FREE' AND EXISTS (SELECT 1 FROM providers p WHERE p.id=provider_offerings.provider_id AND (lower(p.name) LIKE '%token plan%' OR lower(p.name) LIKE '%coding plan%' OR lower(p.name) LIKE '%gitlab duo%' OR lower(p.name) LIKE '%opencode go%')) THEN 'INCLUDED_WITH_SUBSCRIPTION'
+                WHEN free_status='FREE' THEN 'FREE_API'
+                WHEN free_status='PAID' THEN 'PAID_API' ELSE 'UNKNOWN' END,
+              access_requirement=CASE WHEN EXISTS (SELECT 1 FROM providers p WHERE p.id=provider_offerings.provider_id AND (lower(p.name) LIKE '%token plan%' OR lower(p.name) LIKE '%coding plan%' OR lower(p.name) LIKE '%gitlab duo%' OR lower(p.name) LIKE '%opencode go%')) THEN (SELECT p.name FROM providers p WHERE p.id=provider_offerings.provider_id) ELSE NULL END""")
         from .data_update import validate
         validate(db)
         db.execute('INSERT INTO applied_snapshots(digest) VALUES(?)', (digest,))

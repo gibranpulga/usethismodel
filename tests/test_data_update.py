@@ -6,7 +6,7 @@ import pytest
 
 from app import create_app
 from app.data_snapshot import apply_snapshot, encode, snapshot
-from app.data_update import priority, update, write_outputs
+from app.data_update import archive_historical_observations, priority, update, write_outputs
 from app.db import get_db
 
 NOW = "2026-09-20T12:00:00+00:00"
@@ -38,6 +38,73 @@ def record(source="models.dev", fields=None, api_id="verification-model", provid
 def run(db, records, now=NOW, failures=None):
     with db:
         return update(db, records, failures or [], {}, now)
+
+
+def test_historical_observations_are_archived_with_provenance_and_compacted(db, tmp_path):
+    with db:
+        old_id = db.execute("""INSERT INTO data_observations(entity,field,source,source_url,source_id,value_json,priority,observed_at,accepted,evidence)
+          VALUES('offering:999','input_price','official_provider','https://example.test/pricing',NULL,'2',10,'2020-01-01T00:00:00+00:00',1,'published rate')""").lastrowid
+        current_id = db.execute("""INSERT INTO data_observations(entity,field,source,source_url,source_id,value_json,priority,observed_at,accepted,evidence)
+          VALUES('offering:999','output_price','official_provider','https://example.test/pricing',NULL,'3',10,'2026-09-19T00:00:00+00:00',1,'published rate')""").lastrowid
+        selected_id = db.execute("""INSERT INTO data_observations(entity,field,source,source_url,source_id,value_json,priority,observed_at,accepted,evidence)
+          VALUES('model:999','open_weights','official_provider','https://example.test/model',NULL,'true',10,'2020-01-01T00:00:00+00:00',1,'selected fact')""").lastrowid
+        db.execute('INSERT INTO selected_facts(entity,field,observation_id) VALUES(?,?,?)', ('model:999','open_weights',selected_id))
+        db.execute("""INSERT INTO review_queue(id,entity,proposed_change,sources,evidence,confidence,reason,status,created_at,resolved_at,resolution_note,triage_class)
+          VALUES('resolved-test','plan:1','price', '[]','verified evidence','HIGH','reviewed','RESOLVED',?,?,'accepted','plan_change')""", (NOW,NOW))
+        result = archive_historical_observations(db, tmp_path / 'history' / 'observations.sqlite3', NOW)
+        db.commit()
+    assert result['archived_observations'] == 1
+    assert result['archived_resolved_reviews'] == 1
+    assert db.execute('SELECT 1 FROM data_observations WHERE id=?', (old_id,)).fetchone() is None
+    assert db.execute('SELECT 1 FROM data_observations WHERE id=?', (current_id,)).fetchone()
+    assert db.execute('SELECT 1 FROM data_observations WHERE id=?', (selected_id,)).fetchone()
+    assert db.execute("SELECT 1 FROM review_queue WHERE id='resolved-test'").fetchone() is None
+    import sqlite3
+    with sqlite3.connect(tmp_path / 'history' / 'observations.sqlite3') as archive:
+        row = archive.execute('SELECT entity,field,source_url,evidence FROM archived_observations WHERE source_observation_id=?', (old_id,)).fetchone()
+    assert row == ('offering:999', 'input_price', 'https://example.test/pricing', 'published rate')
+    with sqlite3.connect(tmp_path / 'history' / 'observations.sqlite3') as archive:
+        review = archive.execute("SELECT row_json FROM archived_reviews WHERE id='resolved-test'").fetchone()[0]
+    assert json.loads(review)['resolution_note'] == 'accepted'
+
+
+def test_documentation_source_revision_is_review_only(db, monkeypatch):
+    from app import documentation_monitor
+    assert documentation_monitor._json_shape({'plans': [{'price': 2}], 'active': True}) == {
+        'active': 'bool', 'plans': [{'price': 'int'}]}
+    sources = documentation_monitor.monitored_sources(db)
+    if not sources:
+        pytest.skip('migration fixture has no linked official documentation source')
+    state = {'hash': 'a' * 64}
+    def fake_fetch(source):
+        return source, state['hash'], 'b' * 64, 200, None
+    monkeypatch.setattr(documentation_monitor, '_fetch', fake_fetch)
+    with db:
+        first = documentation_monitor.monitor_documentation(db, NOW)
+        state['hash'] = 'c' * 64
+        second = documentation_monitor.monitor_documentation(db, LATER)
+        saved_hash = db.execute('SELECT content_hash FROM documentation_monitor_state LIMIT 1').fetchone()[0]
+        monkeypatch.setattr(documentation_monitor, '_fetch', lambda source: (source, None, None, None, 'Timeout'))
+        failed = documentation_monitor.monitor_documentation(db, '2026-09-22T12:00:00+00:00')
+        after_failure = db.execute('SELECT content_hash,status FROM documentation_monitor_state LIMIT 1').fetchone()
+    assert first['failures'] == 0
+    assert second['changed'] >= 1
+    assert failed['failures'] >= 1
+    assert after_failure['content_hash'] == saved_hash
+    assert after_failure['status'] == 'ERROR'
+    assert db.execute("SELECT COUNT(*) FROM review_queue WHERE status='PENDING' AND reason LIKE 'Official source changed%'").fetchone()[0] >= 1
+
+
+def test_plan_updates_preserve_superseded_published_values(db):
+    with db:
+        plan = db.execute('SELECT * FROM plans LIMIT 1').fetchone()
+        assert plan is not None
+        db.execute('UPDATE plans SET monthly_price=COALESCE(monthly_price,0)+1 WHERE id=?', (plan['id'],))
+    history = db.execute('SELECT * FROM plan_value_history WHERE plan_id=?', (plan['id'],)).fetchone()
+    assert history is not None
+    assert history['name'] == plan['name']
+    assert history['source_id'] == plan['source_id']
+    assert history['verified_at'] == plan['verified_at']
 
 
 def route(db, api_id="verification-model", provider="Verification"):
@@ -102,6 +169,36 @@ def test_direct_and_openrouter_offerings_keep_separate_prices(db):
     assert prices(db, direct["id"]) == {"INPUT": 3, "OUTPUT": 9}
     assert prices(db, router["id"]) == {"INPUT": 0, "OUTPUT": 0}
     assert (direct["free_status"], router["free_status"]) == ("PAID", "FREE")
+
+
+def test_provider_namespace_is_unresolved_until_exact_mapping(db):
+    item = record("models.dev", {"input_price": 1, "output_price": 2},
+                  api_id="deepseek-ai/DeepSeek-V4-Pro", provider="deepinfra")
+    report = run(db, [item])
+    route_row = route(db, item["api_model_id"], "DeepInfra")
+    model = db.execute("SELECT identity_kind FROM models WHERE id=?", (route_row["model_id"],)).fetchone()
+    assert model[0] == "UNKNOWN"
+    assert report["Manual-review items"]
+    assert prices(db, route_row["id"]) == {"INPUT": 1, "OUTPUT": 2}
+
+
+def test_exact_identity_mapping_reconciles_route_and_keeps_offering_history(db):
+    direct = record("official_provider", {"input_price": 3, "output_price": 9},
+                    api_id="deepseek-v4-pro", provider="deepseek", canonical="deepseek/deepseek-v4-pro")
+    routed = record("models.dev", {"input_price": 1, "output_price": 2},
+                    api_id="deepseek-ai/DeepSeek-V4-Pro", provider="deepinfra")
+    run(db, [direct, routed])
+    model_id = route(db, direct["api_model_id"], "DeepSeek")["model_id"]
+    provider_id = db.execute("SELECT id FROM providers WHERE name='DeepInfra'").fetchone()[0]
+    source_id = db.execute("SELECT id FROM sources WHERE url=?", (routed["source_url"],)).fetchone()[0]
+    db.execute("""INSERT INTO model_identity_mappings(provider_id,provider_model_id,model_id,
+      evidence_source_id,evidence_url,evidence,confidence) VALUES(?,?,?,?,?,?,?)""",
+      (provider_id, routed["api_model_id"], model_id, source_id, routed["source_url"],
+       "Exact reviewed mapping in regression fixture", "HIGH"))
+    run(db, [routed], LATER)
+    routed_row = route(db, routed["api_model_id"], "DeepInfra")
+    assert routed_row["model_id"] == model_id
+    assert prices(db, routed_row["id"]) == {"INPUT": 1, "OUTPUT": 2}
 
 
 def test_repeated_update_changes_neither_snapshot_nor_catalog_artifact(db, tmp_path):
@@ -272,11 +369,16 @@ def test_dry_run_never_changes_database_or_artifacts(db, tmp_path, monkeypatch):
     before = hashlib.sha256(open(database, 'rb').read()).hexdigest()
     monkeypatch.setattr('app.update_sources.fetch_sources', lambda: ([record(fields={'input_price': 3})], [], {}))
     monkeypatch.setattr('app.update_sources.fetch_harness_changes', lambda: ([], [], {}))
+    called = []
+    monkeypatch.setattr('app.openrouter_routes.fetch_openrouter_variants', lambda: ([], [], {}))
+    monkeypatch.setattr('app.openrouter_routes.sync_openrouter_variants', lambda *args: called.append('sync') or {'imported': 0, 'failures': 0})
+    monkeypatch.setattr('app.documentation_monitor.monitor_documentation', lambda *args: {'checked': 0, 'changed': 0, 'failures': 0})
     output = tmp_path / 'dry-output'
     monkeypatch.setattr(sys, 'argv', ['data_update', 'update', '--database', database, '--output-dir', str(output), '--dry-run'])
     main()
     assert hashlib.sha256(open(database, 'rb').read()).hexdigest() == before
     assert not output.exists()
+    assert called == ['sync']
 
 
 def test_invalid_preexisting_import_data_is_preserved_as_quarantined_evidence(db):
@@ -396,3 +498,18 @@ def test_validation_requires_active_offer_verification(db):
     db.execute("INSERT INTO offers(provider_id,title,offer_type,status) VALUES(?,'Unverified','PROMO','ACTIVE')", (provider,))
     with pytest.raises(ValueError, match="verification timestamp"):
         validate(db)
+
+
+def test_time_bound_provider_promotion_expires_and_keeps_source(db):
+    provider = db.execute("SELECT id FROM providers WHERE name='OpenAI'").fetchone()[0]
+    source = db.execute("SELECT id FROM sources WHERE name='OpenAI API pricing'").fetchone()[0]
+    db.execute("""INSERT INTO offers(provider_id,title,offer_type,terms_url,starts_at,ends_at,
+      source_id,status,last_verified_at,discount_percent,description)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (provider, 'Verified provider promotion', 'PROMOTIONAL_DISCOUNT',
+      'https://platform.openai.com/pricing', '2026-09-01', '2026-09-19', source,
+      'ACTIVE', '2026-09-19', 10, 'Route-independent provider promotion.'))
+    report = run(db, [record()], now=NOW)
+    row = db.execute("SELECT * FROM offers WHERE title='Verified provider promotion'").fetchone()
+    assert row['status'] == 'EXPIRED'
+    assert row['source_id'] == source
+    assert any(item['title'] == 'Verified provider promotion' for item in report['Expired offers'])

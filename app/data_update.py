@@ -304,14 +304,32 @@ def update(db, records, failures, manifests, now=None):
             found = db.execute('SELECT id FROM providers WHERE lower(name)=lower(?)', (name,)).fetchone()
             provider_ids[provider_key] = found[0] if found else _provider(db, name)
         pid = provider_ids[provider_key]
+        # Aggregator namespaces are transport IDs, not proof of model authorship.
+        # An accepted exact mapping is the only way to attach such an ID to a
+        # different canonical model. Keep unresolved routes callable and visible.
+        mapped = db.execute("""SELECT model_id FROM model_identity_mappings
+          WHERE provider_id=? AND provider_model_id=? AND status='ACCEPTED'""",
+          (pid, record['api_model_id'])).fetchone() if db.execute(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='model_identity_mappings'").fetchone() else None
+        aggregator = provider_key.lower() in {'deepinfra','openrouter','nebius','togetherai','together_ai','novita','novita-ai'}
+        ambiguous_namespace = aggregator and provider_key.lower() != 'openrouter' and '/' in record['api_model_id'] and not record.get('canonical_model_id')
         existing = db.execute('SELECT id,model_id FROM provider_offerings WHERE provider_id=? AND api_model_id=?', (pid, record['api_model_id'])).fetchone()
         if existing:
             oid, mid = existing['id'], existing['model_id']
+            if mapped and mid != mapped['model_id']:
+                mid = mapped['model_id']
+                db.execute('UPDATE provider_offerings SET model_id=? WHERE id=?', (mid, existing['id']))
         else:
             # Exact provider aliases are stronger than inferred canonical names.
             alias = db.execute('SELECT model_id FROM model_aliases WHERE provider_id=? AND alias=?', (pid, record['api_model_id'])).fetchone()
             before = db.execute('SELECT count(*) FROM models').fetchone()[0]
-            mid = alias[0] if alias else _model(db, record['canonical_slug'], record['name'], record['canonical_slug'], False, 'text', sid)
+            unresolved_slug = f"{provider_key}/{record['api_model_id']}" if ambiguous_namespace and not mapped else record['canonical_slug']
+            mid = mapped['model_id'] if mapped else alias[0] if alias else _model(db, unresolved_slug, record['name'], record['provider_name'], False, 'text', sid)
+            if ambiguous_namespace and not mapped and 'identity_kind' in {r[1] for r in db.execute('PRAGMA table_info(models)')}:
+                db.execute("UPDATE models SET identity_kind='UNKNOWN' WHERE id=?", (mid,))
+                review(db, report, now, f'provider-model:{pid}:{record["api_model_id"]}', 'canonical identity', None,
+                       record['canonical_slug'], [record['source_url']],
+                       'Provider-scoped model ID has no accepted exact canonical mapping; original route retained unresolved')
             if db.execute('SELECT count(*) FROM models').fetchone()[0] > before:
                 db.execute('UPDATE models SET first_seen_at=? WHERE id=?', (now, mid))
                 report['New models'].append({'id': mid, 'name': record['name'], 'slug': record['canonical_slug'], 'first_seen_at': now})
@@ -352,9 +370,13 @@ def update(db, records, failures, manifests, now=None):
     touched.update((r[0], r[1]) for r in db.execute("SELECT DISTINCT entity,field FROM data_observations WHERE accepted=1 AND (entity LIKE 'model:%' OR entity LIKE 'offering:%')"))
     for entity, field in sorted(touched):
         resolve(db, entity, field, report, now)
-    for row in db.execute('SELECT id,free_status FROM provider_offerings').fetchall():
+    for row in db.execute('SELECT o.id,o.free_status,p.name provider_name FROM provider_offerings o JOIN providers p ON p.id=o.provider_id').fetchall():
         prices = dict(db.execute("SELECT price_type,amount FROM pricing_records WHERE offering_id=? AND valid_until IS NULL AND price_type IN ('INPUT','OUTPUT') ORDER BY id", (row['id'],)).fetchall())
         status = 'FREE' if prices.get('INPUT') == 0 and prices.get('OUTPUT') == 0 else 'PAID' if any(v > 0 for v in prices.values()) else 'UNKNOWN'
+        bundled = any(term in row['provider_name'].lower() for term in ('token plan', 'coding plan', 'gitlab duo', 'opencode go'))
+        access = ('INCLUDED_WITH_SUBSCRIPTION' if bundled else 'FREE_API') if status == 'FREE' else status + '_API' if status == 'PAID' else 'UNKNOWN'
+        db.execute('UPDATE provider_offerings SET access_semantics=?,access_requirement=? WHERE id=?',
+                   (access, row['provider_name'] if bundled else None, row['id']))
         if row['free_status'] != status:
             db.execute('UPDATE provider_offerings SET free_status=? WHERE id=?', (status, row['id']))
             if status == 'FREE':
@@ -415,6 +437,43 @@ def write_outputs(db, report, output_dir, now):
     return {'snapshot_changed': changed, 'meaningful_changes': meaningful, 'report': str(path), 'pending_reviews': len(queue), **report['records_changed']}
 
 
+def archive_historical_observations(db, archive_path, now, keep_days=90):
+    """Archive old immutable observations, retaining selected facts and recent rows.
+
+    The external SQLite archive is append-only and keyed by the original row ID.
+    Only the staged catalog DB is compacted; source/provenance fields are copied
+    verbatim and source backups remain available for full recovery.
+    """
+    from datetime import datetime, timedelta
+    archive_path = Path(archive_path)
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    cutoff = (datetime.fromisoformat(now.replace('Z', '+00:00')) - timedelta(days=keep_days)).isoformat(timespec='seconds')
+    selected = {row[0] for row in db.execute('SELECT observation_id FROM selected_facts')}
+    candidates = [dict(row) for row in db.execute('SELECT * FROM data_observations WHERE observed_at<? ORDER BY id', (cutoff,)) if row['id'] not in selected]
+    with sqlite3.connect(archive_path) as archive:
+        archive.execute('''CREATE TABLE IF NOT EXISTS archived_observations(
+          archive_id INTEGER PRIMARY KEY, source_observation_id INTEGER NOT NULL, content_hash TEXT NOT NULL UNIQUE,
+          entity TEXT NOT NULL, field TEXT NOT NULL, source TEXT NOT NULL,
+          source_url TEXT NOT NULL, source_id INTEGER, value_json TEXT NOT NULL, priority INTEGER NOT NULL,
+          observed_at TEXT NOT NULL, accepted INTEGER NOT NULL, evidence TEXT NOT NULL,
+          archived_at TEXT NOT NULL)''')
+        for row in candidates:
+            digest = hashlib.sha256(encode(row).encode()).hexdigest()
+            archive.execute('''INSERT OR IGNORE INTO archived_observations
+              (source_observation_id,content_hash,entity,field,source,source_url,source_id,value_json,priority,observed_at,accepted,evidence,archived_at)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+              (row['id'], digest, row['entity'], row['field'], row['source'], row['source_url'], row['source_id'],
+               row['value_json'], row['priority'], row['observed_at'], row['accepted'], row['evidence'], now))
+        archive.execute('CREATE TABLE IF NOT EXISTS archived_reviews(id TEXT PRIMARY KEY,row_json TEXT NOT NULL,archived_at TEXT NOT NULL)')
+        resolved = [dict(row) for row in db.execute("SELECT * FROM review_queue WHERE status!='PENDING' ORDER BY id")]
+        archive.executemany('INSERT OR IGNORE INTO archived_reviews(id,row_json,archived_at) VALUES(?,?,?)',
+                            [(row['id'], encode(row), now) for row in resolved])
+        archive.commit()
+    db.executemany('DELETE FROM data_observations WHERE id=?', [(row['id'],) for row in candidates])
+    db.executemany("DELETE FROM review_queue WHERE id=? AND status!='PENDING'", [(row['id'],) for row in resolved])
+    return {'archived_observations': len(candidates), 'archived_resolved_reviews': len(resolved), 'cutoff': cutoff}
+
+
 def atomic_write(path, content):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -430,6 +489,7 @@ def main():
     parser.add_argument('--output-dir', default='data')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--base-snapshot', help='Reconcile this published snapshot into staging before fetching')
+    parser.add_argument('--history-archive-dir', help='Private append-only SQLite archive directory for old observations')
     args = parser.parse_args()
     from . import create_app
     from .db import get_db
@@ -459,19 +519,31 @@ def main():
                 harnesses, harness_failures, harness_manifests = fetch_harness_changes()
                 monitor_harnesses(db, harnesses, harness_failures, harness_manifests, report, now)
                 record_source_health(db, [('hermes-official-docs', harness_manifests.get('hermes-official-docs', {}).get('url'))], harness_failures, harness_manifests, now)
+                from .documentation_monitor import monitor_documentation
+                doc_monitor = monitor_documentation(db, now)
+                if doc_monitor['changed']:
+                    report['Harness changes'].append({'official_documentation_changes': doc_monitor['changed'], 'review_required': True})
+                if doc_monitor['failures']:
+                    report['Source failures'].append({'source': 'official-documentation-monitor', 'failures': doc_monitor['failures']})
                 from .benchmark_sources import sync_benchmark_registry
                 sync_benchmark_registry(db, now)
-                if not args.dry_run:
-                    from .openrouter_routes import (
-                        fetch_openrouter_variants,
-                        sync_openrouter_variants,
-                    )
-                    variants, route_failures, route_manifest = fetch_openrouter_variants()
-                    route_result = sync_openrouter_variants(db, variants, route_failures, route_manifest, now)
-                    if route_result['imported']:
-                        report['New provider offerings'].append({'openrouter_endpoint_variants': route_result['imported']})
-                    if route_result['failures']:
-                        report['Source failures'].append({'source': 'openrouter-routes', 'error': f"{route_result['failures']} endpoint fetches failed"})
+                # Exercise endpoint ingestion against the staging/dry-run DB too.
+                # A dry run never writes the original database or output artifacts.
+                from .openrouter_routes import fetch_openrouter_variants, sync_openrouter_variants
+                variants, route_failures, route_manifest = fetch_openrouter_variants()
+                route_result = sync_openrouter_variants(db, variants, route_failures, route_manifest, now)
+                report['operational_checks'] = {
+                    'documentation_monitor': doc_monitor,
+                    'openrouter_endpoint_variants': {
+                        'fetched': route_manifest.get('count', len(variants)),
+                        'imported': route_result.get('imported', 0),
+                        'failures': route_result.get('failures', 0),
+                    },
+                }
+                if route_result['imported']:
+                    report['New provider offerings'].append({'openrouter_endpoint_variants': route_result['imported']})
+                if route_result['failures']:
+                    report['Source failures'].append({'source': 'openrouter-routes', 'error': f"{route_result['failures']} endpoint fetches failed"})
                 from .data_quality import auto_resolve_safe_reviews
                 auto_resolve_safe_reviews(db, now)
                 report['validation'] = validate(db)
@@ -489,8 +561,15 @@ def main():
                 db.rollback()
                 raise SystemExit('Update failed; no production data published. Inspect the preserved failure report.') from None
             if args.dry_run:
-                print(encode({'dry_run': True, **report['records_changed'], 'validation': report['validation']}))
+                print(encode({'dry_run': True, **report['records_changed'],
+                              'operational_checks': report.get('operational_checks', {}),
+                              'validation': report['validation']}))
             else:
+                if args.history_archive_dir:
+                    archive_info = archive_historical_observations(db, Path(args.history_archive_dir) / 'observations.sqlite3', now)
+                    report['Historical observations archived'] = [archive_info]
+                    validate(db)
+                    db.commit()
                 print(encode(write_outputs(db, report, args.output_dir, now)))
 
 

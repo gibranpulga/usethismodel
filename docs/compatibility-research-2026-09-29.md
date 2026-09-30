@@ -86,9 +86,7 @@ and the MCP transport specification.
 
 ## Installed Hermes inspection
 
-The VPS process runs Hermes from `/var/lib/hermes/.hermes/hermes-agent`.
-Inspection was read-only and did not expose configuration values or
-credentials. The installed checkout was package version **0.20.0**, commit
+The production Hermes installation was inspected read-only; this did not expose configuration values or credentials. The installed checkout was package version **0.20.0**, commit
 `6a6aacc1cb60fa5d7fd4ef1abcd5879116f25eca`. Its provider plugin registry
 contains native OpenRouter, DeepSeek, Z.ai, OpenAI Codex, Anthropic, Qwen OAuth,
 Alibaba Coding Plan, custom provider, and numerous other profiles. The

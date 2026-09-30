@@ -30,7 +30,7 @@ flask --app wsgi run --debug --port 8000
 ```
 
 Open <http://127.0.0.1:8000>. SQLite initializes automatically at
-`instance/usethismodel.sqlite3` (or `DATABASE_PATH`). The health check is
+`instance/<database-file>` (or `DATABASE_PATH`). The health check is
 <http://127.0.0.1:8000/health>.
 
 For production-like website-only serving, run `gunicorn --bind 127.0.0.1:8000 wsgi:app`.
@@ -178,9 +178,8 @@ The container health probe is `python /app/healthcheck.py`; it checks `/health`
 using Python's standard library. Gunicorn preloads the application so SQLite
 migrations finish before the two workers fork.
 
-The existing Coolify application UUID is `ild8duzk51xnfcuyxtyclzpg`. Its GitHub
-source expects `gibranpulga/usethismodel.git` as the repository value and uses
-the `main` branch. Persistent storage is mounted at `/data`, and
+The Coolify application ID and repository URL belong in private deployment
+configuration. The service uses the `main` branch. Persistent storage is mounted at `/data`, and
 `FLASK_SECRET_KEY` is configured as a runtime-only environment variable.
 
 For this workstation, the personal `coolify` skill manages the REST API over
@@ -212,7 +211,7 @@ API is needed. See [source semantics](docs/update-sources.md),
 `data/catalog.json` is the reviewable deployment snapshot. Startup applies a new
 snapshot once, in a validated SQLite transaction; an invalid snapshot rolls back.
 The persistent database remains in the Coolify volume. Historical reports live in
-`data/reports/` and private VPS `state/reports/`; unresolved evidence is in
+`data/reports/` and private updater `state/reports/`; unresolved evidence is in
 `data/pending-review.json`. Do not hand-edit generated snapshots; update the source
 observations and regenerate them.
 
@@ -225,7 +224,7 @@ file and test both an empty database and a copy of production data.
 For a consistent local backup with no application writer running:
 
 ```sh
-sqlite3 instance/usethismodel.sqlite3 '.backup /private/usethismodel-backup.sqlite3'
+sqlite3 instance/<database-file> '.backup <private-backup-path>'
 ```
 
 Stop application writers before a manual restore, retain the displaced database,
@@ -247,7 +246,7 @@ was used. See [source adapter semantics](docs/update-sources.md).
 ### Logs, deployment, and common failures
 
 Local Flask/Gunicorn logs go to the terminal. The VPS updater keeps private,
-rotated logs and sanitized reports under `~/usethismodel-updater/state/`; Coolify
+rotated logs and sanitized reports under `<private-state-dir>`; Coolify
 holds build/runtime logs. Source collapse, total source outage, invalid data,
 dirty/diverged Git state, failed tests, or snapshot validation stop publication
 without erasing the last valid catalog. For deployment and cron recovery, follow

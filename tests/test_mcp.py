@@ -22,10 +22,10 @@ def call(name, arguments):
 def test_tool_schemas_are_bounded_and_read_only(mcp_app):
     tools = asyncio.run(server.list_tools())
 
-    assert len(tools) == 16
+    assert len(tools) == 17
     assert {tool.name for tool in tools} >= {
         "search_models", "get_model", "search_provider_routes", "compare_models",
-        "compare_routes", "find_cheapest_routes", "find_free_models",
+        "compare_routes", "find_cheapest_routes", "find_free_models", "find_subscription_included_routes",
         "find_tool_capable_models", "find_models_for_harness", "find_models_for_workflow",
         "get_compatibility", "get_current_deals", "get_new_releases", "get_benchmarks",
         "calculate_cost", "get_plan_options",
@@ -125,9 +125,47 @@ def test_public_mcp_rate_limit(mcp_app, monkeypatch):
     monkeypatch.setenv("MCP_RATE_LIMIT_PER_MINUTE", "2")
     application = create_http_app(mcp_app)
     with TestClient(application) as client:
-        assert client.post("/mcp", json={}).status_code != 429
-        assert client.post("/mcp", json={}).status_code != 429
-        limited = client.post("/mcp", json={})
+        assert client.post("/mcp", json={}, headers={"X-Forwarded-For": "203.0.113.1"}).status_code != 429
+        assert client.post("/mcp", json={}, headers={"X-Forwarded-For": "198.51.100.2"}).status_code != 429
+        limited = client.post("/mcp", json={}, headers={"X-Forwarded-For": "192.0.2.3"})
     assert limited.status_code == 429
     assert limited.headers["retry-after"] == "60"
     assert limited.json()["error"] == "rate_limit_exceeded"
+
+
+def test_mcp_compatibility_candidate_budget_is_bounded(mcp_app):
+    from app.mcp_server import MAX_CANDIDATES
+    assert MAX_CANDIDATES == 10_000
+
+
+def test_compatibility_result_cache_is_digest_keyed_and_copy_safe(mcp_app):
+    from app.mcp_server import (
+        _cache_compatibility,
+        _cached_compatibility,
+        _compatibility_cache,
+        _compatibility_cache_key,
+    )
+    with mcp_app.app_context():
+        db = get_db()
+        db.execute('PRAGMA query_only = OFF')
+        db.execute("INSERT INTO applied_snapshots(digest) VALUES('cache-test-one')")
+        first = _compatibility_cache_key(db, {'tools': '1'}, 'Hermes Agent', None, False)
+        _compatibility_cache.clear()
+        _cache_compatibility(first, [{'route': 1}])
+        value = _cached_compatibility(first)
+        value[0]['route'] = 99
+        assert _cached_compatibility(first) == [{'route': 1}]
+        db.execute("INSERT INTO applied_snapshots(digest) VALUES('cache-test-two')")
+        second = _compatibility_cache_key(db, {'tools': '1'}, 'Hermes Agent', None, False)
+        assert first != second
+        db.execute('PRAGMA query_only = ON')
+
+
+def test_representative_mcp_calls_load_smoke(mcp_app):
+    # Bounded representative call mix; catches accidental context-size/query blowups.
+    for name, args in (("search_models", {"query": "gemini", "limit": 10}),
+                       ("search_provider_routes", {"query": "openai", "limit": 10}),
+                       ("get_benchmarks", {"limit": 10}),
+                       ("get_plan_options", {"limit": 10})):
+        result = call(name, args).structured_content
+        assert len(result["items"]) <= 10

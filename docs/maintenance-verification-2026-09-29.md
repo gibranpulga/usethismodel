@@ -1,22 +1,20 @@
 # Data maintenance verification — 2026-09-29
 
-The actual VPS scheduled wrapper completed source updates, validation, pytest,
+The scheduled wrapper completed source updates, validation, pytest,
 Ruff, data-only Git commits/pushes and an explicit Coolify deployment trigger.
-Data commit `74d81f62956db9c0d1969b3f5846b58d37fd9ee4` deployed successfully in
-Coolify deployment `lw9td1egp2mho7agdl6pykgz`. The running image matched that
+The resulting commit deployed successfully and the running image matched that
 commit and was healthy. The final documentation-only commit is deployed and
 verified separately at completion of this stage.
 
 ## Installed schedule
 
-The `deploy` user's actual crontab contains:
+The updater account's actual crontab contains:
 
 ```cron
-20 5 * * * /home/deploy/usethismodel-updater/repo/scripts/daily-update.sh >/dev/null 2>&1
+20 5 * * * <updater-root>/repo/scripts/daily-update.sh >/dev/null 2>&1
 ```
 
-`timedatectl` reports `Europe/Berlin`. At installation, the next run is
-**2026-09-30 05:20 CEST (03:20 UTC)**. Cron is active. The job follows local
+The server timezone is configured locally. Cron is active. The job follows local
 server time through seasonal clock changes.
 
 The real wrapper was invoked while an independent process held its lock. It
@@ -34,7 +32,7 @@ The lock also remained held across code refresh and scheduler re-execution.
 Price counts are field-level change events, including legacy-data corrections,
 not counts of unique models or official provider announcements. Structured
 sources can change between live runs. All three successful reports recorded
-zero source failures. Historical failed-run reports remain in private VPS state.
+zero source failures. Historical failed-run reports remain in private updater state.
 
 The live database contains 3,309 models, 9,296 provider offerings, 103,814
 observations and **2,775 pending review items**. See

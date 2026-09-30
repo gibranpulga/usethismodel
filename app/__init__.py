@@ -84,6 +84,8 @@ def create_app(test_config=None):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if request.path.startswith("/internal/") or request.path.startswith("/api/v1/"):
             response.headers.setdefault("X-Robots-Tag", "noindex, nofollow")
+        if request.method == "GET" and (request.path == "/api/v1" or request.path.startswith("/api/v1/")):
+            response.headers.setdefault("Cache-Control", "public, max-age=60, stale-while-revalidate=30")
         return response
 
     @app.after_request
@@ -172,6 +174,16 @@ def create_app(test_config=None):
         harness_names = [name for name in filters.get("harnesses", "").split(",") if name]
         if filters.get("harness"):
             harness_names.insert(0, filters["harness"])
+        all_harnesses = rows("SELECT id,name FROM harnesses ORDER BY id")
+        normalized_names = []
+        for value in harness_names:
+            candidate = next((h for h in all_harnesses
+                              if str(h["id"]) == value or h["name"].lower() == value.lower()
+                              or slugify(h["name"]) == slugify(value)), None)
+            if not candidate:
+                raise ValueError(f"Unknown harness: {value}")
+            normalized_names.append(candidate["name"])
+        harness_names = normalized_names
         harness_names = list(dict.fromkeys(harness_names))
         try:
             requested_limit = min(250, max(1, int(filters.get("limit", 100))))
@@ -189,7 +201,7 @@ def create_app(test_config=None):
                 (filters["workflow"], filters["workflow"]),
             ).fetchone()
             if not workflow:
-                return []
+                raise ValueError(f"Unknown workflow: {filters['workflow']}")
             if not harness_names:
                 workflow_only = True
                 harness_names = [row["name"] for row in db().execute("""SELECT DISTINCT h.name
@@ -199,8 +211,9 @@ def create_app(test_config=None):
                   WHERE wi.workflow_id=? AND whc.state IN ('YES','CONFIGURATION','PARTIAL')""",
                   (workflow["id"],)).fetchall()]
         route_filters = {key: value for key, value in filters.items() if key != "workflow"}
-        candidate_limit = min(1_000, max(250, requested_offset + requested_limit * 20))
-        query_filters = ({**route_filters, "limit": candidate_limit, "offset": 0}
+        # Qualification precedes pagination: the previous bounded candidate window
+        # could hide compatible routes later in the catalog.
+        query_filters = ({**route_filters, "limit": 100_000, "offset": 0}
                          if harness_names else route_filters)
         result = route_rows(db(), query_filters)
         if not harness_names:
@@ -231,7 +244,8 @@ def create_app(test_config=None):
     @app.get("/health")
     def health():
         db().execute("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").fetchone()
-        return jsonify(status="ok", database="sqlite")
+        snapshot = db().execute("SELECT digest FROM applied_snapshots ORDER BY applied_at DESC LIMIT 1").fetchone()
+        return jsonify(status="ok", database="sqlite", catalog_snapshot_digest=snapshot[0] if snapshot else None)
 
     @app.get("/health/readiness")
     def readiness():
@@ -240,6 +254,7 @@ def create_app(test_config=None):
             "routes": db().execute("SELECT COUNT(*) FROM provider_offerings WHERE lifecycle_status!='REMOVED'").fetchone()[0],
             "sources_ok": db().execute("SELECT COUNT(*) FROM source_health WHERE status='OK'").fetchone()[0],
             "sources_failed": db().execute("SELECT COUNT(*) FROM source_health WHERE status IN ('ERROR','QUARANTINED')").fetchone()[0],
+            "documentation_sources_failed": db().execute("SELECT COUNT(*) FROM documentation_monitor_state WHERE status='ERROR'").fetchone()[0],
         }
         minimum_models = int(os.getenv("HEALTH_MIN_MODELS", "100"))
         minimum_routes = int(os.getenv("HEALTH_MIN_ROUTES", "100"))
@@ -250,6 +265,8 @@ def create_app(test_config=None):
             failures.append(f"route count below {minimum_routes}")
         if metrics["sources_failed"]:
             failures.append(f"{metrics['sources_failed']} source updater(s) failing")
+        if metrics["documentation_sources_failed"]:
+            failures.append(f"{metrics['documentation_sources_failed']} official documentation source(s) failing")
         return jsonify(status="degraded" if failures else "ok", checks=metrics, actions=failures), (503 if failures else 200)
 
     @app.get("/mcp-info")
@@ -311,7 +328,12 @@ def create_app(test_config=None):
             display_filters["sort"] = "featured"
         query_filters = {**display_filters, "limit": page_size + 1,
                          "offset": (page - 1) * page_size}
-        found = compatible_routes(query_filters)
+        filter_errors = []
+        try:
+            found = compatible_routes(query_filters)
+        except ValueError as exc:
+            found = []
+            filter_errors.append(str(exc))
         page_params = {key: value for key, value in filters.items() if key != "page"}
         return render_template(
             "models.html", title="Models & provider routes", filters=display_filters,
@@ -319,6 +341,7 @@ def create_app(test_config=None):
             page=page, has_more=len(found) > page_size, default_view=not filters,
             prev_url=("/models?" + urlencode({**page_params, "page": page - 1})) if page > 1 else None,
             next_url=("/models?" + urlencode({**page_params, "page": page + 1})) if len(found) > page_size else None,
+            filter_errors=filter_errors,
         )
 
     @app.get("/models/<int:model_id>")
@@ -469,7 +492,7 @@ def create_app(test_config=None):
           JOIN workflow_integrations wi ON wi.id=whc.integration_id JOIN harnesses h ON h.id=whc.harness_id
           JOIN sources s ON s.id=whc.source_id WHERE wi.workflow_id=? ORDER BY h.name,wi.name""", (workflow["id"],))
         route_matches = rows("""SELECT rce.*,h.name harness_name,o.id offering_id,o.api_model_id,
-          m.canonical_name,m.canonical_slug,p.name provider_name,o.context_limit,o.free_status,o.tool_support,
+          m.canonical_name,m.canonical_slug,p.name provider_name,o.context_limit,o.access_semantics,o.access_requirement,o.tool_support,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC LIMIT 1) input_price,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='OUTPUT' AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC LIMIT 1) output_price,
           s.url source_url FROM route_compatibility_evidence rce JOIN harnesses h ON h.id=rce.harness_id
@@ -544,6 +567,7 @@ def create_app(test_config=None):
         input_tokens = bounded_int("input_tokens", 1_000_000)
         output_tokens = bounded_int("output_tokens", 250_000)
         cache_share = min(100, bounded_int("cache_share", 0, 100)) / 100
+        cache_write_share = min(100-cache_share*100, bounded_int("cache_write_share", 0, 100)) / 100
         batch = request.args.get("batch") == "1"
         selected_plan = None
         if request.args.get("plan_id", "").isdigit():
@@ -552,13 +576,22 @@ def create_app(test_config=None):
               WHERE pl.id=?""", (int(request.args["plan_id"]),)).fetchone()
         calculated = []
         for route in compatible_routes(filters):
-            if route["input_price"] is None or route["output_price"] is None:
+            from .costing import estimate_token_cost
+            price_rows = db().execute("SELECT price_type,amount,unit,context_threshold FROM pricing_records WHERE offering_id=? AND valid_until IS NULL", (route["offering_id"],)).fetchall()
+            prices = {}
+            for price_row in price_rows:
+                price = prices.setdefault(price_row["price_type"], {"amount": price_row["amount"], "unit": price_row["unit"]})
+                if price_row["context_threshold"] is not None:
+                    price["tiered"] = True
+            usage = {"input": round(input_tokens * (1-cache_share-cache_write_share)), "output": output_tokens,
+                     "cache_read": round(input_tokens * cache_share),
+                     "cache_write": round(input_tokens * cache_write_share)}
+            estimate = estimate_token_cost(prices, usage, batch=batch)
+            if estimate["cost"] is None:
                 continue
-            cache_price = route["cache_read_price"] if route["cache_read_price"] is not None else route["input_price"]
-            total = (input_tokens * ((1-cache_share)*route["input_price"] + cache_share*cache_price) + output_tokens * route["output_price"]) / 1_000_000
-            calculated.append({**route, "monthly_cost": total * (.5 if batch and route["batch"] else 1), "batch_applied": batch and route["batch"]})
+            calculated.append({**route, "monthly_cost": estimate["cost"], "batch_applied": bool(estimate["batch_classes_used"])})
         calculated = sorted(calculated, key=lambda r: r["monthly_cost"])
-        return render_template("calculator.html", title="Cost calculator", filters=filters, options=filter_options(db()), routes=calculated[:12], route_count=len(calculated), plans=plan_rows(db(), {"subscription": "1", "coding": "1"}), selected_plan=dict(selected_plan) if selected_plan else None, input_tokens=input_tokens, output_tokens=output_tokens, cache_share=round(cache_share*100), batch=batch)
+        return render_template("calculator.html", title="Cost calculator", filters=filters, options=filter_options(db()), routes=calculated[:12], route_count=len(calculated), plans=plan_rows(db(), {"subscription": "1", "coding": "1"}), selected_plan=dict(selected_plan) if selected_plan else None, input_tokens=input_tokens, output_tokens=output_tokens, cache_share=round(cache_share*100), cache_write_share=round(cache_write_share*100), batch=batch)
 
     @app.get("/deals")
     @app.get("/offers")
@@ -650,7 +683,7 @@ def create_app(test_config=None):
 
     @app.get("/benchmarks")
     def benchmarks():
-        return render_template("benchmarks.html", title="Benchmarks", benchmarks=rows("SELECT b.*,COUNT(br.id) result_count FROM benchmarks b LEFT JOIN benchmark_results br ON br.benchmark_id=b.id GROUP BY b.id ORDER BY b.is_current DESC,b.name,b.version DESC"), results=rows("SELECT b.name benchmark,b.version,m.canonical_name,br.score,br.metric,br.confidence,br.harness_name,br.scaffold,br.reasoning_setting FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id JOIN models m ON m.id=br.model_id WHERE b.is_current=1 AND br.confidence IN ('HIGH','MEDIUM') ORDER BY b.name,br.score DESC"))
+        return render_template("benchmarks.html", title="Benchmarks", benchmarks=rows("SELECT b.*,COUNT(br.id) result_count FROM benchmarks b LEFT JOIN benchmark_results br ON br.benchmark_id=b.id GROUP BY b.id ORDER BY b.is_current DESC,b.name,b.version DESC"), results=rows("SELECT b.name benchmark,b.version,m.canonical_name,br.score,br.metric,br.confidence,br.harness_name,br.scaffold,br.reasoning_setting FROM benchmark_results br JOIN benchmarks b ON b.id=br.benchmark_id JOIN models m ON m.id=br.model_id WHERE b.is_current=1 AND br.confidence IN ('HIGH','MEDIUM') ORDER BY b.name,b.version,br.metric,br.score DESC"))
 
     @app.get("/use-cases")
     def use_cases():

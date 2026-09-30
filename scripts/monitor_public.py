@@ -24,8 +24,8 @@ CHECKS = {
 }
 
 REQUIRED = {
-    "homepage": (b"UseThisModel", b"What model should I use?", b'href="/models"'),
-    "crawler_homepage": (b"UseThisModel", b"What model should I use?"),
+    "homepage": (b"UseThisModel", b"Find a model you can actually use.", b'href="/models"'),
+    "crawler_homepage": (b"UseThisModel", b"Find a model you can actually use."),
     "robots": (b"User-agent: OAI-SearchBot", b"Sitemap: https://"),
     "sitemap": (b"<sitemapindex", b"https://usethismodel.com/sitemaps/"),
     "llms": (b"# UseThisModel", b"Public API documentation:"),

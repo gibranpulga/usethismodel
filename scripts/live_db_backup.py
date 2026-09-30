@@ -7,8 +7,8 @@ import sqlite3
 import subprocess
 from pathlib import Path
 
-APP = "ild8duzk51xnfcuyxtyclzpg"
-VOLUME = f"{APP}-usethismodel-data"
+APP = os.environ.get("COOLIFY_APP_ID")
+VOLUME = os.environ.get("COOLIFY_VOLUME_ID")
 REMOTE_BACKUP = r"""
 import os, sqlite3, sys, tempfile
 fd, path = tempfile.mkstemp(suffix='.sqlite3')
@@ -27,6 +27,8 @@ finally:
 
 
 def live_container():
+    if not APP or not VOLUME:
+        raise RuntimeError("COOLIFY_APP_ID and COOLIFY_VOLUME_ID must be configured privately")
     ids = subprocess.check_output(
         ["docker", "ps", "--filter", f"name={APP}", "--format", "{{.ID}}"], text=True
     ).split()

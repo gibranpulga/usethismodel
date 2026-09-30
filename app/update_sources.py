@@ -119,7 +119,7 @@ def _canonical(provider, api_id, explicit=None):
     return api_id if "/" in api_id else f"{provider}/{api_id}"
 
 
-def _record(source, url, kind, priority, provider, provider_name, api_id, canonical, name, fields):
+def _record(source, url, kind, priority, provider, provider_name, api_id, canonical, name, fields, explicit_canonical=None):
     return {
         "source": source,
         "source_url": url,
@@ -129,6 +129,7 @@ def _record(source, url, kind, priority, provider, provider_name, api_id, canoni
         "provider_name": provider_name,
         "api_model_id": api_id,
         "canonical_slug": canonical,
+        "canonical_model_id": explicit_canonical,
         "name": name,
         "fields": _known(fields),
     }
@@ -173,6 +174,7 @@ def parse_models_dev(payload):
                     canonical,
                     item.get("name") or api_id,
                     fields,
+                    item.get("canonical_model_id"),
                 )
             )
     return records

@@ -527,6 +527,13 @@
         "sha256": "37e34be56c6542b4d1078ec6dc1375fb82fc9f34c3d226d9d624b229c45527cd"
       }
     ],
+    "model_identity_mappings": [],
+    "model_identity_review": [
+      {
+        "path": "snapshot/model_identity_review/000000.json",
+        "sha256": "5f20f7795bb964360e8229fad1f900cfaa17c094a07f998b12d3c794e28585d2"
+      }
+    ],
     "model_media_features": [
       {
         "path": "snapshot/model_media_features/000000.json",
@@ -554,11 +561,11 @@
       },
       {
         "path": "snapshot/models/000002.json",
-        "sha256": "2687fa1353394bedc8a295a4cf80b4dacc97f72e87ca7b47cedd0d6f2f550123"
+        "sha256": "9634079deebe9fa9b805a826ca47ab5fa5ef5a69a9013bcd059878f5e5d20499"
       },
       {
         "path": "snapshot/models/000003.json",
-        "sha256": "2d791ddb737c11da51fa63ffe5850dc4204b2d15fd49f6d216113f086675f316"
+        "sha256": "df3fc32fea1b218efc2f5b5f467cc42ed9c4176fcbb9c655e3f6e9fce4e357c8"
       }
     ],
     "offering_capabilities": [

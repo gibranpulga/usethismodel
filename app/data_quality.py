@@ -9,6 +9,9 @@ FRESHNESS_THRESHOLDS = {
     "deals": (2, 7),
     "route_capabilities": (14, 30),
     "benchmarks": (30, 90),
+    "plans": (7, 30),
+    "harnesses": (14, 45),
+    "workflows": (14, 45),
 }
 
 _KIND_ALIASES = {
@@ -21,6 +24,9 @@ _KIND_ALIASES = {
     "capability": "route_capabilities",
     "capabilities": "route_capabilities",
     "benchmark": "benchmarks",
+    "plan": "plans",
+    "harness": "harnesses",
+    "workflow": "workflows",
 }
 
 _SAFE_REASONS = (
@@ -158,12 +164,28 @@ def data_quality_metrics(db):
     )
     free_tools = _count(
         db,
-        "SELECT COUNT(*) FROM provider_offerings WHERE free_status='FREE' AND tool_support='YES'",
+        "SELECT COUNT(*) FROM provider_offerings WHERE access_semantics IN ('FREE_API','FREE_TIER') AND tool_support='YES'",
     )
     openrouter_free_tools = _count(
         db,
         "SELECT COUNT(*) FROM openrouter_route_variants WHERE is_free=1 AND endpoint_status=0 AND tool_support='YES'",
     )
+    compat_harness_1 = _count(db, """SELECT COUNT(DISTINCT harness_id) FROM (
+      SELECT harness_id FROM harness_provider_compatibility WHERE support_mode NOT IN ('UNKNOWN','NO')
+      UNION SELECT harness_id FROM harness_access_methods WHERE access_method='OPENROUTER' AND state='YES')""")
+    derived_provider_pairs = _count(db, "SELECT COUNT(DISTINCT harness_id) FROM harness_access_methods WHERE access_method='OPENROUTER' AND state='YES'")
+    compat_harness_5 = _count(db, "SELECT COUNT(*) FROM (SELECT harness_id FROM harness_provider_compatibility WHERE support_mode NOT IN ('UNKNOWN','NO') GROUP BY harness_id HAVING COUNT(DISTINCT provider_id)>=5)")
+    compat_route_evidence = _count(db, "SELECT COUNT(DISTINCT offering_id) FROM route_compatibility_evidence")
+    compat_evidence_rows = _count(db, "SELECT COUNT(*) FROM route_compatibility_evidence")
+    compat_workflow_rows = _count(db, "SELECT COUNT(*) FROM workflow_harness_compatibility")
+    derived_openrouter_routes = _count(db, """SELECT COUNT(DISTINCT o.id) FROM provider_offerings o
+      JOIN providers p ON p.id=o.provider_id JOIN harness_access_methods ha ON ha.access_method='OPENROUTER' AND ha.state='YES'
+      WHERE p.name='OpenRouter'""")
+    compat_unknown_route_pairs = _count(db, """SELECT COUNT(*) FROM provider_offerings o
+      WHERE NOT EXISTS(SELECT 1 FROM route_compatibility_evidence e WHERE e.offering_id=o.id)
+      AND NOT EXISTS(SELECT 1 FROM harness_provider_compatibility hpc WHERE hpc.provider_id=o.provider_id AND hpc.support_mode NOT IN ('UNKNOWN','NO'))
+      AND NOT EXISTS(SELECT 1 FROM harness_access_methods ha JOIN providers p ON p.id=o.provider_id
+        WHERE ha.harness_id IS NOT NULL AND ha.access_method='OPENROUTER' AND ha.state='YES' AND p.name='OpenRouter')""")
 
     return [
         _metric("routes", "Provider routes", routes),
@@ -195,6 +217,14 @@ def data_quality_metrics(db):
             compatibility,
             harnesses * providers,
         ),
+        _metric("harnesses_with_provider_integration", "Harnesses with >=1 provider integration", compat_harness_1, harnesses),
+        _metric("derived_harness_provider_integrations", "Harness/provider pairs derivable from documented OpenRouter access", derived_provider_pairs),
+        _metric("harnesses_with_five_integrations", "Harnesses with >=5 provider integrations", compat_harness_5, harnesses),
+        _metric("routes_with_compatibility_evidence", "Routes with route-specific compatibility evidence", compat_route_evidence, routes),
+        _metric("route_compatibility_evidence_rows", "Route-specific compatibility evidence rows", compat_evidence_rows),
+        _metric("routes_with_derived_openrouter_compatibility", "OpenRouter routes eligible for evidence-derived harness compatibility", derived_openrouter_routes, routes),
+        _metric("workflow_compatibility_evidence_rows", "Workflow-specific compatibility evidence rows", compat_workflow_rows),
+        _metric("routes_unknown_without_provider_or_route_evidence", "Routes with no route/provider compatibility evidence", compat_unknown_route_pairs, routes),
         _metric("active_deals", "Active route/provider deals", active_deals),
         _metric("free_tool_routes", "Free tool-capable routes", free_tools),
         _metric(

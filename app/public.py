@@ -10,7 +10,14 @@ from flask import Blueprint, Response, abort, current_app, jsonify, request, url
 
 from .db import get_db
 from .domain import compatibility_for
-from .query import access_route_rows, offer_rows, openrouter_free_rows, plan_rows, route_rows
+from .query import (
+    access_route_rows,
+    normalize_context,
+    offer_rows,
+    openrouter_free_rows,
+    plan_rows,
+    route_rows,
+)
 
 public = Blueprint("public", __name__)
 API_VERSION = "v1"
@@ -75,6 +82,8 @@ def _route_json(row, compatibility=None):
             "currency": "USD",
         },
         "free_status": row["free_status"],
+        "access_semantics": row["access_semantics"],
+        "access_requirement": row["access_requirement"],
         "active_offer": bool(row["active_deal"]),
         "commercial_use": row["commercial_use"],
         "caveats": {"general": row["caveat"], "rate_limit": row["rate_limit_note"],
@@ -104,12 +113,14 @@ def normalized_filters(args):
     for public_name, internal in aliases.items():
         if public_name in values and internal not in values:
             values[internal] = values[public_name]
-    for key in ("tools", "mcp", "free", "open_weights", "commercial", "reasoning",
+    for key in ("tools", "mcp", "free", "included", "open_weights", "commercial", "reasoning",
                 "vision", "caching", "batch", "text_to_3d", "image_to_3d"):
         if key in values:
             values[key] = "1" if _truth(values[key]) else "0"
     if values.get("type", "").lower() == "3d":
         values["type"] = "3D generation"
+    if "context" in values:
+        values["context"] = str(normalize_context(values["context"]))
     if values.get("offers") == "current":
         values["deal"] = "1"
     if values.get("releases") in {"7-days", "week", "7d"}:
@@ -130,9 +141,13 @@ def _harness(value):
 
 
 def filtered_routes(args):
-    filters = normalized_filters(args)
+    try:
+        filters = normalized_filters(args)
+    except ValueError as exc:
+        return [], {"filter_errors": [str(exc)], **{k: v for k, v in args.items()}}
     harness = _harness(filters.get("harness"))
     if filters.get("harness") and not harness:
+        filters["filter_errors"] = [f"Unknown harness: {filters['harness']}"]
         return [], filters
     filters.pop("harness", None)
     workflow = None
@@ -142,21 +157,33 @@ def filtered_routes(args):
             (filters["workflow"], filters["workflow"]),
         ).fetchone()
         if not workflow:
+            filters["filter_errors"] = [f"Unknown workflow: {filters['workflow']}"]
             return [], filters
     route_filters = {key: value for key, value in filters.items() if key != "workflow"}
     try:
         requested_limit = min(250, max(1, int(filters.get("limit", 100))))
     except (TypeError, ValueError):
         requested_limit = 100
+    try:
+        requested_offset = min(10_000, max(0, int(filters.get("offset", 0))))
+    except (TypeError, ValueError):
+        requested_offset = 0
     needs_compatibility = bool(harness or route_filters.get("mcp") == "1" or workflow)
-    candidates = route_rows(get_db(), {**route_filters, "limit": 10_000} if needs_compatibility else route_filters)
+    try:
+        candidates = route_rows(get_db(), {**route_filters, "limit": 10_000, "offset": 0}
+                                if needs_compatibility else
+                                {**route_filters, "limit": requested_limit, "offset": requested_offset})
+    except ValueError as exc:
+        filters["filter_errors"] = [str(exc)]
+        return [], filters
     if not harness and filters.get("mcp") == "1":
         # MCP is a workflow property: require at least one documented MCP harness route.
         mcp_harnesses = get_db().execute("SELECT id FROM harnesses WHERE supports_mcp=1").fetchall()
-        return [row for row in candidates if any(
+        matches = [row for row in candidates if any(
             compatibility_for(get_db(), h["id"], row["offering_id"], True)["status"]
             in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}
-            for h in mcp_harnesses)][:requested_limit], filters
+            for h in mcp_harnesses)]
+        return matches[requested_offset:requested_offset + requested_limit], filters
     if harness:
         kept = []
         for row in candidates:
@@ -167,7 +194,7 @@ def filtered_routes(args):
             )
             if match["status"] in {"COMPATIBLE", "COMPATIBLE_WITH_CONFIGURATION", "PARTIAL"}:
                 kept.append({**row, "_compatibility": match})
-        return kept[:requested_limit], filters
+        return kept[requested_offset:requested_offset + requested_limit], filters
     return candidates, filters
 
 
@@ -289,12 +316,18 @@ def api_harnesses():
         item["mcp_capabilities"] = [dict(x) for x in get_db().execute(
             "SELECT transport,state,note FROM harness_mcp_capabilities WHERE harness_id=? ORDER BY transport", (row["id"],))]
         item["claims"] = [dict(x) for x in get_db().execute(
-            """SELECT hc.claim_key,hc.claim_value,hc.note,hc.verified_at,s.url source_url
+            """SELECT hc.claim_key,hc.claim_value,hc.note,hc.verified_at,s.url source_url,
+                      dm.status documentation_status,dm.last_checked_at documentation_last_checked_at,
+                      dm.last_changed_at documentation_last_changed_at
                FROM harness_claims hc JOIN sources s ON s.id=hc.source_id
+               LEFT JOIN documentation_monitor_state dm ON dm.source_id=hc.source_id
                WHERE hc.harness_id=? ORDER BY hc.claim_key""", (row["id"],))]
         item["access_methods"] = [dict(x) for x in get_db().execute(
-            """SELECT ha.access_method,ha.state,ha.note,ha.verified_at,s.url source_url
+            """SELECT ha.access_method,ha.state,ha.note,ha.verified_at,s.url source_url,
+                      dm.status documentation_status,dm.last_checked_at documentation_last_checked_at,
+                      dm.last_changed_at documentation_last_changed_at
                FROM harness_access_methods ha JOIN sources s ON s.id=ha.source_id
+               LEFT JOIN documentation_monitor_state dm ON dm.source_id=ha.source_id
                WHERE ha.harness_id=? ORDER BY ha.access_method""", (row["id"],))]
         data.append(item)
     return _envelope(data)
@@ -306,9 +339,12 @@ def api_workflows():
     for row in get_db().execute("SELECT * FROM workflows ORDER BY name"):
         item = dict(row)
         item["integrations"] = [dict(x) for x in get_db().execute(
-            """SELECT name,repository_url,transport,os_requirements,locality,tools_exposed,
-              maintenance_status,maintenance_note,verified_at FROM workflow_integrations
-              WHERE workflow_id=? ORDER BY name""", (row["id"],))]
+            """SELECT wi.name,wi.repository_url,wi.transport,wi.os_requirements,wi.locality,wi.tools_exposed,
+              wi.maintenance_status,wi.maintenance_note,wi.verified_at,
+              dm.status documentation_status,dm.last_checked_at documentation_last_checked_at,
+              dm.last_changed_at documentation_last_changed_at
+              FROM workflow_integrations wi LEFT JOIN documentation_monitor_state dm ON dm.source_id=wi.source_id
+              WHERE wi.workflow_id=? ORDER BY wi.name""", (row["id"],))]
         data.append(item)
     return _envelope(data)
 
@@ -365,13 +401,13 @@ def api_compatibility():
     routes, filters = filtered_routes(request.args)
     data = [_route_json(row, row.get("_compatibility") or compatibility_for(
         get_db(), harness["id"], row["offering_id"], filters.get("mcp") == "1")) for row in routes]
-    return _envelope(data, harness={"id": harness["id"], "name": harness["name"], "slug": slugify(harness["name"])})
+    return _envelope(data, harness={"id": harness["id"], "name": harness["name"], "slug": slugify(harness["name"])}, warnings=filters.get("filter_errors", []))
 
 
 @public.get("/api/v1/search")
 def api_search():
     routes, filters = filtered_routes(request.args)
-    return _envelope([_route_json(row, row.get("_compatibility")) for row in routes], filters=filters)
+    return _envelope([_route_json(row, row.get("_compatibility")) for row in routes], filters=filters, warnings=filters.get("filter_errors", []))
 
 
 @public.get("/robots.txt")

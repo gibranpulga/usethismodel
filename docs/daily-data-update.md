@@ -1,6 +1,6 @@
 # Daily data refresh operations
 
-The server runs `scripts/daily-update.sh` as the `deploy` user. It takes a
+The server runs `scripts/daily-update.sh` as a dedicated updater account. It takes a
 nonblocking `flock` for the whole refresh, creates a consistent SQLite backup,
 reconciles the latest published snapshot into a private staging database, updates
 it in an isolated Git worktree, validates the data, runs
@@ -18,15 +18,15 @@ a deployment overlap safely postpones the refresh if the choice is ambiguous.
 
 ## Server layout and provisioning
 
-- SSH: `ssh -p 7382 deploy@169.58.143.172`
+- SSH: `ssh -p <ssh-port> <server-user>@<production-host>`
 - Server timezone: `Europe/Berlin`
-- Root: `~/usethismodel-updater`
-- Dedicated clean checkout: `~/usethismodel-updater/repo`, branch `main`
-- Python environment: `~/usethismodel-updater/.venv`
-- Private state, staging database, worktree, logs and backups: `~/usethismodel-updater/state`
-- Application: `ild8duzk51xnfcuyxtyclzpg`
-- Volume: `ild8duzk51xnfcuyxtyclzpg-usethismodel-data`
-- Database in that volume: `/data/usethismodel.sqlite3`
+- Root: `<updater-root>`
+- Dedicated clean checkout: `<updater-root>/repo`, branch `main`
+- Python environment: `<updater-root>/.venv`
+- Private state, staging database, worktree, logs and backups: `<private-state-dir>`
+- Application: `<coolify-app-id>`
+- Volume: `<persistent-volume-id>`
+- Database in that volume: `<database-path>`
 
 The account needs Git, Python 3.12+, `flock`, Docker group access, and an SSH
 credential authorized to push this repository. The SSH host key must already be
@@ -34,7 +34,7 @@ verified and known. Git is noninteractive (`BatchMode=yes`); authentication
 failures stop the run. Do not embed tokens in the remote URL or cron entry. The deploy-only Coolify credential is stored at `state/coolify-deploy.json` with
 mode 0600. It is loaded by the Python helper, sent only in an Authorization header
 to the local API, and never enters command arguments, Git, reports or logs. The
-helper hardcodes the UseThisModel application UUID. Coolify tokens are team-scoped;
+helper reads the application ID from private deployment settings. Coolify tokens are team-scoped;
 this token has only the deploy ability, without read/write/root/sensitive access.
 It has no automatic expiry; rotate it deliberately and replace the private file.
 An explicit trigger is required because the configured auto-deploy setting did
@@ -44,10 +44,10 @@ Provision once as `deploy` after preparing its GitHub authentication:
 
 ```sh
 umask 077
-mkdir -p "$HOME/usethismodel-updater/state"
-git clone --branch main git@github.com:gibranpulga/usethismodel.git "$HOME/usethismodel-updater/repo"
-python3 -m venv "$HOME/usethismodel-updater/.venv"
-"$HOME/usethismodel-updater/.venv/bin/pip" install -r "$HOME/usethismodel-updater/repo/requirements-dev.txt"
+mkdir -p "<updater-root>/state"
+git clone --branch main <repository-url> "<updater-root>/repo"
+python3 -m venv "<updater-root>/.venv"
+"<updater-root>/.venv/bin/pip" install -r "<updater-root>/repo/requirements-dev.txt"
 ```
 
 Dependencies live outside the checkout and must be reprovisioned when requirements
@@ -55,14 +55,14 @@ change. The scheduler does not install arbitrary dependencies on every run.
 Use the wrapper for manual invocations so they share the cron lock:
 
 ```sh
-"$HOME/usethismodel-updater/repo/scripts/daily-update.sh" --dry-run
-"$HOME/usethismodel-updater/repo/scripts/daily-update.sh"
+"<updater-root>/repo/scripts/daily-update.sh" --dry-run
+"<updater-root>/repo/scripts/daily-update.sh"
 ```
 
-Install this line in the **deploy user's** crontab after the first real run passes:
+Install this line in the updater account's crontab after the first real run passes:
 
 ```cron
-20 5 * * * /home/deploy/usethismodel-updater/repo/scripts/daily-update.sh >/dev/null 2>&1
+20 5 * * * <updater-root>/repo/scripts/daily-update.sh >/dev/null 2>&1
 ```
 
 This is 05:20 Europe/Berlin on the configured server, outside the clock-change
@@ -105,7 +105,28 @@ because network errors can contain credentials or response data; failure reports
 identify the failed phase and exception type without copying those values.
 
 After a push and explicit API trigger, verify the matching Coolify deployment and HTTPS health check;
-the scheduler records publication success, not asynchronous deployment success.
+the scheduler polls both `/health` and `/health/readiness` for up to ten minutes
+at `DEPLOY_HEALTHCHECK_URL` (default `https://usethismodel.com`). A non-200,
+degraded readiness response, or timeout fails the job, preserves the private
+status report, and identifies the health-verification phase. Inspect the
+reported readiness actions and Coolify logs before retrying. The check verifies
+the public deployment endpoint after the acknowledged Coolify deployment ID,
+requires the published catalog snapshot digest at `/health`, and requires three
+consecutive healthy polls after a 30-second warmup. The deployment ID is
+retained in private logs.
+
+Plan and official harness/workflow documentation URLs linked to catalog facts
+are fingerprinted each day. Fetch errors are recorded separately from content
+changes. A changed fingerprint creates a review item; it never rewrites a plan
+price, allowance, access rule, or compatibility claim. Page schema changes are
+also reviewed. Preserve the source wording when units are not comparable.
+An explicit validated plan-value update stores superseded values and source
+verification metadata in `plan_value_history` before replacing the current row.
+
+The updater archives observations older than 90 days into private
+`state/history/observations.sqlite3` before snapshot compaction. Back up this
+archive with SQLite's online backup API. See [history archive and recovery](history-archive.md).
+
 If the deployed app fails, use Coolify rollback and investigate logs. Retain the
 matching pre-refresh SQLite backup for operator-directed recovery if needed.
 Do not replace a live SQLite file while application processes are running.

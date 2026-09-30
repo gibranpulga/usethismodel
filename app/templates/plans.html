@@ -22,7 +22,7 @@
   <dl class="plan-facts"><dt>Models</dt><dd>{{ plan.models_included or 'Not published' }}</dd><dt>API access</dt><dd>{{ plan.api_access|lower }} — subscription access is separate from general PAYG API unless noted</dd><dt>Published allowance</dt><dd>{{ plan.quota_description or 'Not published' }}</dd><dt>Reset</dt><dd>{{ plan.reset_interval or 'Unknown' }}</dd><dt>Explicit limit</dt><dd>{{ plan.published_limit or 'Not published' }}</dd><dt>Exact token equivalent</dt><dd>Unknown{% if plan.published_limit and ('token' in plan.published_limit|lower) %} unless the provider’s stated model-specific assumptions apply{% endif %}</dd></dl>
   {% if plan.fair_use %}<p class="plan-note"><b>Fair use:</b> {{ plan.fair_use }}</p>{% endif %}{% if plan.region_restrictions %}<p class="plan-note"><b>Regions:</b> {{ plan.region_restrictions }}</p>{% endif %}
   <div class="compat-list">{% for item in plan.compatibility %}<span title="{{ item.note or '' }}">{{ item.harness_name }} · {{ item.support_level|replace('_',' ')|lower }}</span>{% endfor %}</div>
-  <footer><a href="{{ plan.source_url }}" rel="noreferrer">Official source</a><span>Verified {{ plan.verified_at or 'unknown' }}</span></footer>
+  <footer><a href="{{ plan.source_url }}" rel="noreferrer">Official source</a><span>Checked {{ plan.last_checked_at or 'not yet monitored' }} · verified {{ plan.last_verified_at or plan.verified_at or 'unknown' }}</span></footer>
 </article>{% else %}<p class="empty">No current plans match these filters.</p>{% endfor %}
 </div>
 

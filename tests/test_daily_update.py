@@ -58,6 +58,8 @@ def test_validation_failure_never_pushes(scheduler, tmp_path):
 
 def test_backup_refuses_ambiguous_live_containers(scheduler, monkeypatch):
     helper = sys.modules["live_db_backup"]
+    monkeypatch.setattr(helper, "APP", "test-app")
+    monkeypatch.setattr(helper, "VOLUME", "test-volume")
 
     def output(args, **kwargs):
         if args[1] == "ps":
@@ -94,6 +96,7 @@ def test_report_archive_survives_no_commit(scheduler, tmp_path):
 
 def test_deploy_secret_requires_private_permissions(scheduler, tmp_path):
     helper = sys.modules['trigger_deploy']
+    helper.APP = 'test-app'
     path = tmp_path / 'coolify-deploy.json'
     path.write_text('{"token":"secret"}')
     path.chmod(0o644)
@@ -103,6 +106,7 @@ def test_deploy_secret_requires_private_permissions(scheduler, tmp_path):
 
 def test_deploy_credential_is_only_in_authorization_header(scheduler, tmp_path, monkeypatch):
     helper = sys.modules['trigger_deploy']
+    monkeypatch.setattr(helper, 'APP', 'test-app')
     path = tmp_path / 'coolify-deploy.json'
     path.write_text('{"token":"test-secret"}')
     path.chmod(0o600)
@@ -127,3 +131,26 @@ def test_deploy_credential_is_only_in_authorization_header(scheduler, tmp_path, 
     assert seen[0].get_header('Authorization') == 'Bearer test-secret'
     assert 'secret' not in seen[0].full_url
     assert json.loads(seen[0].data) == {'uuid': helper.APP, 'force': False}
+
+
+def test_deployment_health_verifies_liveness_and_readiness(scheduler, monkeypatch):
+    helper = sys.modules['trigger_deploy']
+    checked = []
+
+    class Reply:
+        def __init__(self, body): self.body = body
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self): return self.body
+
+    def opened(request, **kwargs):
+        checked.append(request.full_url)
+        body = b'{"status":"ok","catalog_snapshot_digest":"' + b'b' * 64 + b'"}' if request.full_url.endswith('/health') else b'{"status":"ok"}'
+        return Reply(body)
+
+    monkeypatch.setattr(helper, 'urlopen', opened)
+    assert helper.verify_health('https://example.test', timeout=1, interval=0, warmup=0, stable_polls=1,
+                                expected_snapshot_digest='b' * 64) == {
+        'base_url': 'https://example.test', 'health': 'ok', 'readiness': 'ok', 'stable_polls': 1}
+    assert checked == ['https://example.test/health', 'https://example.test/health/readiness']

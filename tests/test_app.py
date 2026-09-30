@@ -32,7 +32,7 @@ def test_database_initializes_all_migrations(app):
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
 
-    assert migrations == [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,), (11,), (12,), (13,), (14,), (15,)]
+        assert migrations == [(i,) for i in range(1, 20)]
     assert {
         "models",
         "providers",
@@ -72,7 +72,15 @@ def test_health_checks_sqlite(client):
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json == {"status": "ok", "database": "sqlite"}
+    assert response.json["status"] == "ok"
+    assert response.json["database"] == "sqlite"
+
+
+def test_homepage_satisfies_public_monitor_content_checks(client):
+    from scripts.monitor_public import REQUIRED
+    response = client.get('/')
+    assert response.status_code == 200
+    assert all(marker in response.data for marker in REQUIRED['homepage'])
 
 
 def test_plan_catalog_preserves_vague_limits_and_access_routes(client):
@@ -185,6 +193,24 @@ def test_unknown_and_provider_specific_override(app):
         assert compatibility_for(db, harness, offering["id"])["status"] == "NOT_COMPATIBLE"
 
 
+def test_official_openrouter_access_derives_route_compatibility(app):
+    with app.app_context():
+        db = get_db()
+        harness = db.execute("SELECT id FROM harnesses WHERE name='Pi'").fetchone()[0]
+        offering = db.execute("""SELECT o.id FROM provider_offerings o JOIN providers p ON p.id=o.provider_id
+          WHERE p.name='OpenRouter' AND o.tool_support='YES' AND NOT EXISTS
+          (SELECT 1 FROM route_compatibility_evidence e WHERE e.harness_id=? AND e.offering_id=o.id) LIMIT 1""", (harness,)).fetchone()
+        result = compatibility_for(db, harness, offering["id"])
+        assert result["status"] == "COMPATIBLE_WITH_CONFIGURATION"
+        assert result["derived"] is True
+        assert result["checks"]["tool_call_reliability"] == "UNKNOWN"
+        assert result["source"]["url"]
+
+        unsupported = db.execute("SELECT id FROM harnesses WHERE name='Gemini CLI'").fetchone()[0]
+        unknown = compatibility_for(db, unsupported, offering["id"])
+        assert unknown["status"] == "UNKNOWN"
+
+
 def test_catalog_detail_pages(client):
     for path in ["/models/1", "/providers/1", "/harnesses/1"]:
         response = client.get(path)
@@ -250,6 +276,9 @@ def test_published_snapshot_contains_all_requested_route_cases():
                 for row in json.loads(path.read_text())]
     access = {(row["access_method"], row["mcp_workflow_status"]) for row in evidence}
     assert len(evidence) >= 8
+    providers = [row for path in (root / "harness_provider_compatibility").glob("*.json")
+                 for row in json.loads(path.read_text())]
+    assert sum(row["support_mode"] not in {"UNKNOWN", "NO"} for row in providers) >= 4
     assert ("DeepSeek API key", "COMPATIBLE") in access
     assert ("OpenAI API key or ChatGPT/Codex subscription", "COMPATIBLE") in access
 
@@ -365,6 +394,37 @@ def test_multi_harness_setup_requires_compatibility_with_every_harness(client):
 def test_malformed_numeric_filters_do_not_error(client):
     response = client.get("/models?context=nope&input_max=not-a-price")
     assert response.status_code == 200
+    assert b"Filter issue" in response.data
+    api = client.get("/api/v1/search?context=nope")
+    assert api.status_code == 200 and api.json["meta"]["warnings"]
+
+
+@pytest.mark.parametrize("value", ["1M", "1M+", "1000000", "1,000,000", "1000K"])
+def test_context_filter_friendly_forms_normalize(value):
+    from app.query import normalize_context
+    assert normalize_context(value) == 1_000_000
+
+
+def test_harness_slug_and_display_name_share_compatibility_results(client):
+    slug = client.get("/api/v1/search?harness=hermes-agent&limit=4").json["data"]
+    display = client.get("/api/v1/search?harness=Hermes+Agent&limit=4").json["data"]
+    assert [r["id"] for r in slug] == [r["id"] for r in display]
+
+
+def test_subscription_included_zero_price_is_not_free(app, client):
+    with app.app_context():
+        db = get_db()
+        from app.data_snapshot import apply_snapshot
+        apply_snapshot(db, Path(__file__).resolve().parents[1] / "data" / "catalog.json")
+        row = db.execute("SELECT id FROM provider_offerings WHERE access_semantics='INCLUDED_WITH_SUBSCRIPTION' LIMIT 1").fetchone()
+        assert row is not None
+        assert db.execute("SELECT access_semantics FROM provider_offerings WHERE id=?", (row["id"],)).fetchone()[0] == "INCLUDED_WITH_SUBSCRIPTION"
+        free_ids = {r["offering_id"] for r in route_rows(db, {"free":"1", "tools":"1", "limit":100000})}
+        included_ids = {r["offering_id"] for r in route_rows(db, {"included":"1", "limit":100000})}
+        assert row["id"] not in free_ids
+        assert row["id"] in included_ids
+    response = client.get("/api/v1/search?free=true&tools=true&limit=250")
+    assert all(r["access_semantics"] != "INCLUDED_WITH_SUBSCRIPTION" for r in response.json["data"])
 
 
 def test_value_sort_uses_visible_formula(app):
@@ -573,3 +633,10 @@ def test_dense_decision_pages_limit_initial_rendering(client):
 ])
 def test_malformed_public_numeric_inputs_do_not_error(client, path):
     assert client.get(path).status_code == 200
+
+
+def test_public_api_caps_requested_route_page(client):
+    response = client.get('/api/v1/search?limit=100000&query=')
+    assert response.status_code == 200
+    assert response.json['meta']['count'] <= 250
+    assert response.headers['Cache-Control'].startswith('public, max-age=60')
