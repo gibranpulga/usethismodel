@@ -265,7 +265,7 @@ def api_docs():
     body = """<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width'>
 <meta name=description content="Read-only, source-backed UseThisModel API for AI models, provider routes, prices, offers, benchmarks, and harness compatibility."><meta name=robots content="index,follow"><link rel=canonical href="__CANONICAL__"><title>Public API — UseThisModel</title></head><body><nav aria-label="Site"><a href=/>UseThisModel</a> · <a href=/models>Models</a> · <a href=/providers>Providers</a> · <a href=/harnesses>Harnesses</a></nav><main><h1>UseThisModel public API v1</h1>
 <p>All endpoints are read-only JSON. Collections accept <code>limit</code> (default 100, maximum 250) and either 1-based <code>page</code> or zero-based <code>offset</code>. Do not combine page and offset. Metadata <code>count</code> is this page’s size; <code>total</code> is the total matching records; <code>next_offset</code> is null at the end; <code>has_more</code> states whether another page exists. Oversized limits are capped; malformed pagination is rejected with HTTP 400. Unfiltered machine collections include their full catalog, regardless of featured web subsets.</p>
-<h2>Resources</h2><ul><li><code>GET /api/v1/models</code> and <code>/api/v1/models/{canonical-slug}</code></li><li><code>GET /api/v1/providers</code></li><li><code>GET /api/v1/harnesses</code></li><li><code>GET /api/v1/offers?status=current</code></li><li><code>GET /api/v1/free-routes?tools=true</code></li><li><code>GET /api/v1/releases?window=7-days</code></li><li><code>GET /api/v1/benchmarks</code></li><li><code>GET /api/v1/compatibility?harness=hermes-agent&amp;mcp=true</code></li><li><code>GET /api/v1/search?q=coding</code></li></ul>
+<h2>Resources</h2><ul><li><code>GET /api/v1/models</code> and <code>/api/v1/models/{canonical-slug}</code></li><li><code>GET /api/v1/providers</code></li><li><code>GET /api/v1/harnesses</code></li><li><code>GET /api/v1/offers?status=current</code></li><li><code>GET /api/v1/free-routes?tools=true</code></li><li><code>GET /api/v1/releases</code> (all dated releases; use <code>?window=7-days</code> for recent releases or <code>?window=all</code> explicitly)</li><li><code>GET /api/v1/benchmarks</code></li><li><code>GET /api/v1/compatibility?harness=hermes-agent&amp;mcp=true</code></li><li><code>GET /api/v1/search?q=coding</code></li></ul>
 <h2>Model and search filters</h2><p><code>tools=true</code>, <code>max_output_price=1</code>, <code>harness=hermes-agent</code>, <code>mcp=true</code>, <code>offers=current</code>, <code>releases=7-days</code>, <code>type=3d</code>, <code>provider=OpenRouter</code>, <code>min_context=1000000</code>, <code>free=true</code>, <code>open_weights=true</code>, and <code>limit=100</code> can be combined. Prices are USD per million tokens unless a media price includes a native unit.</p>
 <p><a href=/api/v1/openapi.json>OpenAPI 3.1 description</a> · <a href=/api/v1>Machine-readable API index</a> · <a href=/>UseThisModel</a></p></main></body></html>"""
     return Response(body.replace("__CANONICAL__", canonical), mimetype="text/html")
@@ -449,7 +449,7 @@ def api_free_routes():
 
 @public.get("/api/v1/releases")
 def api_releases():
-    window = request.args.get("window", "7-days")
+    window = request.args.get("window", "all")
     if window == "all":
         since = None
     else:

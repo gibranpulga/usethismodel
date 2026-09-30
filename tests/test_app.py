@@ -680,6 +680,15 @@ def test_api_collections_expose_total_and_next_page(client, path):
     assert meta['has_more'] is (meta['total'] > 3)
 
 
+def test_releases_api_defaults_to_full_enumerable_catalog(client):
+    default = client.get('/api/v1/releases?limit=3').json
+    all_releases = client.get('/api/v1/releases?window=all&limit=3').json
+    recent = client.get('/api/v1/releases?window=7-days&limit=3').json
+    assert default['meta']['total'] == all_releases['meta']['total']
+    assert default['meta']['window'] == 'all'
+    assert recent['meta']['total'] <= all_releases['meta']['total']
+
+
 def test_invalid_pagination_is_rejected_and_large_limit_is_capped(client):
     assert client.get('/api/v1/models?page=0').status_code == 400
     assert client.get('/api/v1/models?page=2&offset=20').status_code == 400
