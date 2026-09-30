@@ -75,5 +75,6 @@
 {"entity":"offering:9329","field":"reasoning","observation_id":104215},
 {"entity":"offering:9329","field":"structured_output","observation_id":104216},
 {"entity":"offering:9329","field":"tool_calling","observation_id":104217},
-{"entity":"offering:9329","field":"vision","observation_id":104218}
+{"entity":"offering:9329","field":"vision","observation_id":104218},
+{"entity":"model:3321","field":"modality","observation_id":104238}
 ]

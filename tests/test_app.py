@@ -689,6 +689,25 @@ def test_releases_api_defaults_to_full_enumerable_catalog(client):
     assert recent['meta']['total'] <= all_releases['meta']['total']
 
 
+def test_gpt_6_1_sol_has_official_release_and_route_evidence(app):
+    from app.data_snapshot import apply_snapshot
+    with app.app_context():
+        db = get_db()
+        apply_snapshot(db, Path(__file__).parents[1] / 'data/catalog.json')
+        row = db.execute("""SELECT m.canonical_name,m.released_at,m.release_date_kind,
+          o.api_model_id,o.context_limit,o.max_output_tokens,o.tool_support,s.url
+          FROM models m JOIN provider_offerings o ON o.model_id=m.id
+          JOIN sources s ON s.id=o.source_id WHERE o.api_model_id='gpt-6.1-sol'""").fetchone()
+        prices = {r['price_type']: r['amount'] for r in db.execute("""SELECT price_type,amount
+          FROM pricing_records p JOIN provider_offerings o ON o.id=p.offering_id
+          WHERE o.api_model_id='gpt-6.1-sol' AND p.valid_until IS NULL""")}
+    assert row['canonical_name'] == 'GPT-6.1 Sol'
+    assert (row['released_at'], row['release_date_kind']) == ('2026-09-29', 'official')
+    assert row['url'] == 'https://developers.openai.com/api/docs/models/gpt-6.1-sol'
+    assert (row['context_limit'], row['max_output_tokens'], row['tool_support']) == (1050000, 128000, 'YES')
+    assert prices == {'INPUT': 2, 'CACHE_READ': 0.1, 'CACHE_WRITE': 2.5, 'OUTPUT': 10}
+
+
 def test_invalid_pagination_is_rejected_and_large_limit_is_capped(client):
     assert client.get('/api/v1/models?page=0').status_code == 400
     assert client.get('/api/v1/models?page=2&offset=20').status_code == 400

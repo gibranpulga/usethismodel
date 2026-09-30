@@ -80,5 +80,6 @@
 {"fetched_at":"2026-09-30","id":79,"name":"Goose AAIF governance","reliability":"HIGH","source_type":"official_governance","url":"https://github.com/aaif-goose/goose/blob/main/GOVERNANCE.md"},
 {"fetched_at":"2026-09-30","id":80,"name":"Cursor acquisition announcement","reliability":"HIGH","source_type":"official_announcement","url":"https://cursor.com/blog/joining-spacex"},
 {"fetched_at":"2026-09-30","id":81,"name":"OpenAI About ChatGPT Pro tiers","reliability":"HIGH","source_type":"official_support","url":"https://help.openai.com/en/articles/9793128-what-is-chatgpt-pro"},
-{"fetched_at":"2026-09-30","id":82,"name":"SpaceXAI company information","reliability":"HIGH","source_type":"official_company","url":"https://x.ai/company"}
+{"fetched_at":"2026-09-30","id":82,"name":"SpaceXAI company information","reliability":"HIGH","source_type":"official_company","url":"https://x.ai/company"},
+{"fetched_at":"2026-09-30","id":83,"name":"GPT-6.1 Sol official API model page","reliability":"HIGH","source_type":"official model documentation","url":"https://developers.openai.com/api/docs/models/gpt-6.1-sol"}
 ]
