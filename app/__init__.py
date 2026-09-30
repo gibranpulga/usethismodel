@@ -8,7 +8,7 @@ from flask import Flask, abort, g, jsonify, redirect, render_template, request, 
 
 from .db import init_db
 from .domain import compatibility_for
-from .public import public, slugify
+from .public import absolute_url, public, slugify
 from .query import (
     access_route_rows,
     filter_options,
@@ -30,7 +30,7 @@ MORE_NAV = [("Compatibility", "/compatibility"), ("Plans", "/plans"),
             ("New Releases", "/releases"), ("Harnesses", "/harnesses"),
             ("Workflows", "/workflows"), ("Benchmarks", "/benchmarks"),
             ("Providers", "/providers"), ("Use Cases", "/use-cases"),
-            ("Rankings", "/rankings"), ("MCP", "/mcp-info")]
+            ("Rankings", "/rankings"), ("API", "/api"), ("MCP", "/mcp-info")]
 PRESETS = {
     "free-tools": ("Free + Tools", {"free": "1", "tools": "1"}), "cheap-agent": ("Cheapest Agent Models", {"tools": "1", "use_case": "agentic-coding"}),
     "strong-coding": ("Strong Coding", {"tools": "1", "use_case": "coding"}), "best-value-coding": ("Best Value Coding", {"tools": "1", "use_case": "coding", "sort": "value"}),
@@ -42,7 +42,11 @@ PRESETS = {
 
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
-    app.config.from_mapping(SECRET_KEY=os.getenv("FLASK_SECRET_KEY", "local-development-key"), DATABASE=os.getenv("DATABASE_PATH", str(Path(app.instance_path) / "usethismodel.sqlite3")))
+    app.config.from_mapping(
+        SECRET_KEY=os.getenv("FLASK_SECRET_KEY", "local-development-key"),
+        DATABASE=os.getenv("DATABASE_PATH", str(Path(app.instance_path) / "usethismodel.sqlite3")),
+        PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL", "").rstrip("/"),
+    )
     if test_config:
         app.config.update(test_config)
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
@@ -120,7 +124,7 @@ def create_app(test_config=None):
     @app.context_processor
     def navigation():
         from .data_quality import freshness_text
-        canonical = request.url_root.rstrip("/") + request.path
+        canonical = absolute_url(request.path)
         return {
             "nav": NAV,
             "more_nav": MORE_NAV,
@@ -267,6 +271,11 @@ def create_app(test_config=None):
             coding=route_rows(db(), {"tools": "1", "use_case": "coding", "sort": "value", "limit": 3}),
             home_harnesses=rows("SELECT id,name,interfaces,supports_mcp FROM harnesses WHERE name IN ('Hermes Agent','Codex CLI','OpenCode','Pi') ORDER BY name"),
             media_routes=route_rows(db(), {"type": "3D generation", "limit": 3}), changes=changes[:3],
+            structured_data={
+                "@context": "https://schema.org", "@type": "Dataset",
+                "name": "UseThisModel AI model route catalog", "url": absolute_url("/"),
+                "description": "Source-backed AI models, provider routes, prices, offers, harness compatibility, releases, and benchmarks.",
+            },
             meta_description="Find current AI model routes, deals, new releases, coding models, harness compatibility, and 3D generation APIs from source-backed data.",
         )
 
@@ -325,7 +334,7 @@ def create_app(test_config=None):
         schema = {"@context": "https://schema.org", "@type": "Dataset",
                   "name": f"{model['canonical_name']} provider routes and compatibility",
                   "description": f"Current source-backed routes, prices, capabilities and benchmark observations for {model['canonical_name']}.",
-                  "url": request.url_root.rstrip('/') + url_for('model_detail_slug', model_slug=canonical_path),
+                  "url": absolute_url(url_for('model_detail_slug', model_slug=canonical_path)),
                   "dateModified": verified[:10] if verified else None}
         return render_template("model_detail.html", title=f"{model['canonical_name']} prices, providers & compatibility", item=dict(model), offerings=offerings, offering_count=len(all_offerings), use_cases=use_cases, benchmarks=benchmarks, harnesses=harnesses, media=dict(media) if media else None, sources=source_rows(db(), model_id=model_id), last_verified_at=verified, canonical_url=schema["url"], structured_data=schema, meta_description=f"{model['canonical_name']} provider routes, current pricing, limits, tool support, benchmarks, harness compatibility, sources, and verification dates.")
 
@@ -348,7 +357,7 @@ def create_app(test_config=None):
         route = next(iter(route_rows(db(), {"offering_id": offering_id})), None)
         peers = route_rows(db(), {"model_id": route["model_id"], "limit": 250})
         offers = [o for o in offer_rows(db(), include_expired=True) if o["offering_id"] in (None, offering_id) and o["provider_id"] == route["provider_id"]]
-        return render_template("route_detail.html", title=f"{route['canonical_name']} via {route['provider_name']}", route=route, history=price_history(db(), offering_id), peers=peers, offers=offers, route_variants=openrouter_variant_rows(db(), offering_id), sources=source_rows(db(), offering_id=offering_id), canonical_url=request.url_root.rstrip('/') + request.path, meta_description=f"Current {route['canonical_name']} pricing, limits, tool support, offers, price history, and sources for the {route['provider_name']} route.")
+        return render_template("route_detail.html", title=f"{route['canonical_name']} via {route['provider_name']}", route=route, history=price_history(db(), offering_id), peers=peers, offers=offers, route_variants=openrouter_variant_rows(db(), offering_id), sources=source_rows(db(), offering_id=offering_id), canonical_url=absolute_url(request.path), meta_description=f"Current {route['canonical_name']} pricing, limits, tool support, offers, price history, and sources for the {route['provider_name']} route.")
 
     @app.get("/providers")
     def providers():
@@ -380,7 +389,7 @@ def create_app(test_config=None):
           UNION SELECT source_id FROM offers WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?))
           ORDER BY s.reliability,s.name""", (provider_id, provider_id, provider_id, provider_id, provider_id, provider_id))
         verified = max([r["fetched_at"] for r in routes if r["fetched_at"]] + [s["fetched_at"] for s in sources if s["fetched_at"]], default=None)
-        canonical = request.url_root.rstrip('/') + url_for('provider_detail_slug', provider_slug=provider_slug)
+        canonical = absolute_url(url_for('provider_detail_slug', provider_slug=provider_slug))
         schema = {"@context": "https://schema.org", "@type": "Dataset", "name": f"{provider['name']} AI model route catalog", "description": f"Source-backed prices, capabilities, offers and limits for {provider['name']} routes.", "url": canonical, "dateModified": verified[:10] if verified else None}
         return render_template("provider_detail.html", title=f"{provider['name']} AI models, pricing & routes", provider=provider, routes=routes, route_count=route_count, plans=rows("SELECT * FROM plans WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?)", (provider_id, provider_id)), offers=rows("SELECT * FROM offers WHERE provider_id IN (SELECT id FROM providers WHERE id=? OR canonical_provider_id=?) ORDER BY status,ends_at", (provider_id, provider_id)), sources=sources, last_verified_at=verified, canonical_url=canonical, structured_data=schema, meta_description=f"Documented {provider['name']} AI model routes, current prices, limits, offers, sources, and last verification dates.")
 
@@ -419,7 +428,7 @@ def create_app(test_config=None):
         evidence_routes = [route for route in routes if route["compatibility"].get("source")]
         canonical_slug = next((alias for alias, target in {"codex": "codex-cli", "hermes": "hermes-agent"}.items()
                                if target == requested_slug), requested_slug)
-        canonical = request.url_root.rstrip('/') + url_for('harness_detail_slug', harness_slug=canonical_slug)
+        canonical = absolute_url(url_for('harness_detail_slug', harness_slug=canonical_slug))
         schema = {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": harness["name"], "applicationCategory": "DeveloperApplication", "operatingSystem": harness["supported_os"], "url": canonical, "softwareVersion": harness["current_version"]}
         return render_template("harness_detail.html", title=f"{harness['name']} providers, models & MCP compatibility", item=dict(harness), capabilities=capabilities, claims=claims, access_methods=access_methods, routes=evidence_routes or routes[:24], sources=sources, last_verified_at=verified, canonical_url=canonical, structured_data=schema, meta_description=f"Documented {harness['name']} provider integrations, model-route compatibility, MCP capabilities, sources, and caveats.")
 
@@ -455,11 +464,11 @@ def create_app(test_config=None):
           JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
           WHERE b.category IN ('coding','agentic coding','software engineering')
           ORDER BY b.is_current DESC,br.score DESC LIMIT 20""")
-        schema = {"@context": "https://schema.org", "@type": "Dataset", "name": f"{workflow['name']} compatibility routes", "description": workflow["description"], "url": request.url_root.rstrip('/') + request.path, "dateModified": workflow["verified_at"]}
+        schema = {"@context": "https://schema.org", "@type": "Dataset", "name": f"{workflow['name']} compatibility routes", "description": workflow["description"], "url": absolute_url(request.path), "dateModified": workflow["verified_at"]}
         return render_template("workflow_detail.html", title=f"{workflow['name']} compatibility", workflow=workflow,
           integrations=integrations, hosts=hosts, route_matches=route_matches, benchmarks=benchmarks,
           structured_data=schema,
-          canonical_url=request.url_root.rstrip('/') + request.path,
+          canonical_url=absolute_url(request.path),
           meta_description=f"Source-backed {workflow['name']} MCP servers, compatible harness hosts, model routes, prices, and evidence.")
 
     @app.get("/compatibility")
@@ -501,7 +510,7 @@ def create_app(test_config=None):
             "plans.html", title="Developer plans & access routes", plans=plan_rows(db(), filters),
             filters=filters, plan_providers=providers, plan_harnesses=harnesses,
             routes_by_family=routes_by_family,
-            canonical_url=request.url_root.rstrip('/') + request.path,
+            canonical_url=absolute_url(request.path),
             meta_description="Compare current AI coding subscriptions, explicit allowances, API separation, harness compatibility, and model access routes from official sources.",
         )
 
@@ -538,7 +547,7 @@ def create_app(test_config=None):
         differences = pricing_differences(db())
         current_offers = offer_rows(db())
         free_routes = openrouter_free_rows(db())
-        canonical = request.url_root.rstrip('/') + "/deals"
+        canonical = absolute_url("/deals")
         schema = {"@context": "https://schema.org", "@type": "ItemList", "name": "Current AI model deals",
                   "url": canonical, "itemListElement": [
                       {"@type": "Offer", "name": offer["title"], "url": offer["terms_url"] or canonical,
@@ -615,7 +624,7 @@ def create_app(test_config=None):
     @app.get("/new-releases")
     def releases():
         release_routes = route_rows(db(), {"release": "week"})
-        canonical = request.url_root.rstrip('/') + "/releases"
+        canonical = absolute_url("/releases")
         schema = {"@context": "https://schema.org", "@type": "Dataset", "name": "New AI model releases",
                   "description": "Recently released models with current provider routes, prices, capabilities and source verification.", "url": canonical}
         return render_template("models.html", title="New releases", filters={"release": "week"}, options=filter_options(db()), routes=release_routes, structured_data=schema, canonical_url=canonical, meta_description="Newly released AI models with provider routes, current prices, capabilities, and verification dates.")
@@ -637,7 +646,7 @@ def create_app(test_config=None):
           FROM benchmark_results br JOIN models m ON m.id=br.model_id LEFT JOIN sources s ON s.id=br.source_id
           WHERE br.benchmark_id=? ORDER BY br.score DESC""", (benchmark["id"],))
         source = db().execute("SELECT * FROM sources WHERE id=?", (benchmark["source_id"],)).fetchone() if benchmark["source_id"] else None
-        return render_template("benchmark_detail.html", title=f"{benchmark['name']} {benchmark['version']} benchmark", benchmark=benchmark, results=results, source=source, canonical_url=request.url_root.rstrip('/') + request.path, meta_description=f"{benchmark['name']} {benchmark['version']} methodology, metric-specific results, harness details, sources, and caveats.")
+        return render_template("benchmark_detail.html", title=f"{benchmark['name']} {benchmark['version']} benchmark", benchmark=benchmark, results=results, source=source, canonical_url=absolute_url(request.path), meta_description=f"{benchmark['name']} {benchmark['version']} methodology, metric-specific results, harness details, sources, and caveats.")
 
     @app.get("/internal/data-quality")
     def internal_data_quality():
@@ -684,7 +693,7 @@ def create_app(test_config=None):
         deal_rows = [offer for offer in offer_rows(db()) if offer.get("offering_id") in {route["offering_id"] for route in matching_routes}][:6]
         verified = max([row["fetched_at"] for row in scores if row["fetched_at"]] + [row["fetched_at"] for row in matching_routes if row["fetched_at"]], default=None)
         canonical_path = "3d-generation" if data_slug == "3d" else use_case_slug
-        canonical = request.url_root.rstrip('/') + url_for('use_case_detail', use_case_slug=canonical_path)
+        canonical = absolute_url(url_for('use_case_detail', use_case_slug=canonical_path))
         schema = {"@context": "https://schema.org", "@type": "Dataset", "name": f"AI model routes for {use_case['name']}", "description": use_case["description"], "url": canonical, "dateModified": verified[:10] if verified else None}
         return render_template("use_case_detail.html", title=f"AI models for {use_case['name']}", use_case=use_case, scores=scores, routes=matching_routes, offers=deal_rows, benchmarks=relevant_benchmarks, last_verified_at=verified, structured_data=schema, canonical_url=canonical, meta_description=f"Source-backed AI model routes for {use_case['name']}, with classifications, prices, capabilities, compatibility, deals, benchmarks, and verification dates.")
 

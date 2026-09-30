@@ -59,6 +59,8 @@ def audit(client):
         if client.get(path, headers={"User-Agent": "UseThisModel launch audit/1.0"}).status_code >= 400:
             failures.append(f"broken internal link: {path}")
     for path, marker in [("/robots.txt", "OAI-SearchBot"), ("/sitemap.xml", "sitemapindex"),
+                         ("/llms.txt", "# UseThisModel"),
+                         ("/api/v1/openapi.json", '"openapi":"3.1.0"'),
                          ("/feeds/changes.json", "jsonfeed.org")]:
         response = client.get(path)
         if response.status_code != 200 or marker not in response.get_data(as_text=True):

@@ -6,7 +6,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from xml.sax.saxutils import escape
 
-from flask import Blueprint, Response, abort, jsonify, request, url_for
+from flask import Blueprint, Response, abort, current_app, jsonify, request, url_for
 
 from .db import get_db
 from .domain import compatibility_for
@@ -15,6 +15,15 @@ from .query import access_route_rows, offer_rows, openrouter_free_rows, plan_row
 public = Blueprint("public", __name__)
 API_VERSION = "v1"
 TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def public_origin() -> str:
+    """Return the configured canonical origin without trusting an arbitrary Host header."""
+    return (current_app.config.get("PUBLIC_BASE_URL") or request.url_root).rstrip("/")
+
+
+def absolute_url(path: str) -> str:
+    return public_origin() + (path if path.startswith("/") else "/" + path)
 
 
 def slugify(value: str) -> str:
@@ -75,8 +84,8 @@ def _route_json(row, compatibility=None):
         "lifecycle_status": row["lifecycle_status"],
         "source": ({"name": row["route_source_name"], "url": row["route_source_url"]}
                    if row["route_source_url"] else None),
-        "url": url_for("route_detail_slug", provider_slug=slugify(row["provider_name"]),
-                       api_model_id=row["api_model_id"], _external=True),
+        "url": absolute_url(url_for("route_detail_slug", provider_slug=slugify(row["provider_name"]),
+                                    api_model_id=row["api_model_id"])),
     }
     if compatibility:
         result["compatibility"] = compatibility
@@ -166,7 +175,8 @@ def filtered_routes(args):
 def api_index():
     return _envelope({
         "name": "UseThisModel public read-only API",
-        "documentation": url_for("public.api_docs", _external=True),
+        "documentation": absolute_url(url_for("public.api_docs")),
+        "openapi": absolute_url(url_for("public.openapi_spec")),
         "response": {"data": "resource or list", "meta": {"api_version": "v1", "count": "integer"}},
         "endpoints": ["models", "models/{canonical-slug}", "providers", "plans", "access-routes", "harnesses", "workflows",
                       "offers", "free-routes", "releases", "benchmarks", "compatibility", "search"],
@@ -175,12 +185,43 @@ def api_index():
 
 @public.get("/api")
 def api_docs():
-    return Response("""<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width'>
-<title>Public API — UseThisModel</title><body><main><h1>UseThisModel public API v1</h1>
+    canonical = absolute_url("/api")
+    body = """<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width'>
+<meta name=description content="Read-only, source-backed UseThisModel API for AI models, provider routes, prices, offers, benchmarks, and harness compatibility."><meta name=robots content="index,follow"><link rel=canonical href="__CANONICAL__"><title>Public API — UseThisModel</title></head><body><nav aria-label="Site"><a href=/>UseThisModel</a> · <a href=/models>Models</a> · <a href=/providers>Providers</a> · <a href=/harnesses>Harnesses</a></nav><main><h1>UseThisModel public API v1</h1>
 <p>All endpoints are read-only JSON. Responses use <code>{&quot;data&quot;: …, &quot;meta&quot;: {&quot;api_version&quot;: &quot;v1&quot;, &quot;count&quot;: …}}</code>. Unknown values remain null or the explicit tri-state <code>UNKNOWN</code>.</p>
 <h2>Resources</h2><ul><li><code>GET /api/v1/models</code> and <code>/api/v1/models/{canonical-slug}</code></li><li><code>GET /api/v1/providers</code></li><li><code>GET /api/v1/harnesses</code></li><li><code>GET /api/v1/offers?status=current</code></li><li><code>GET /api/v1/free-routes?tools=true</code></li><li><code>GET /api/v1/releases?window=7-days</code></li><li><code>GET /api/v1/benchmarks</code></li><li><code>GET /api/v1/compatibility?harness=hermes-agent&amp;mcp=true</code></li><li><code>GET /api/v1/search?q=coding</code></li></ul>
 <h2>Model and search filters</h2><p><code>tools=true</code>, <code>max_output_price=1</code>, <code>harness=hermes-agent</code>, <code>mcp=true</code>, <code>offers=current</code>, <code>releases=7-days</code>, <code>type=3d</code>, <code>provider=OpenRouter</code>, <code>min_context=1000000</code>, <code>free=true</code>, <code>open_weights=true</code>, and <code>limit=100</code> can be combined. Prices are USD per million tokens unless a media price includes a native unit.</p>
-<p><a href=/api/v1>Machine-readable API index</a> · <a href=/>UseThisModel</a></p></main></body></html>""", mimetype="text/html")
+<p><a href=/api/v1/openapi.json>OpenAPI 3.1 description</a> · <a href=/api/v1>Machine-readable API index</a> · <a href=/>UseThisModel</a></p></main></body></html>"""
+    return Response(body.replace("__CANONICAL__", canonical), mimetype="text/html")
+
+
+@public.get("/api/v1/openapi.json")
+def openapi_spec():
+    """Generate discovery paths from Flask's live route map so the document cannot drift."""
+    paths = {}
+    for rule in current_app.url_map.iter_rules():
+        if not rule.rule.startswith("/api/v1") or "GET" not in rule.methods:
+            continue
+        path = re.sub(r"<(?:[^:>]+:)?([^>]+)>", r"{\1}", rule.rule)
+        parameters = [
+            {"name": argument, "in": "path", "required": True,
+             "schema": {"type": "string"}}
+            for argument in sorted(rule.arguments)
+        ]
+        paths[path] = {"get": {
+            "operationId": rule.endpoint.replace(".", "_"),
+            "summary": (current_app.view_functions[rule.endpoint].__doc__ or
+                        rule.endpoint.rsplit(".", 1)[-1].replace("_", " ").title()).strip(),
+            **({"parameters": parameters} if parameters else {}),
+            "responses": {"200": {"description": "Successful read-only response"}},
+        }}
+    return jsonify({
+        "openapi": "3.1.0",
+        "info": {"title": "UseThisModel public read-only API", "version": API_VERSION,
+                 "description": "Source-backed AI model, provider-route, pricing, offer, benchmark and harness compatibility data."},
+        "servers": [{"url": absolute_url("/api/v1")}],
+        "paths": dict(sorted(paths.items())),
+    })
 
 
 @public.get("/api/v1/models")
@@ -335,34 +376,21 @@ def api_search():
 
 @public.get("/robots.txt")
 def robots():
-    root = request.url_root.rstrip("/")
+    root = public_origin()
     policy = f"""# Public factual pages are available to search and answer engines.
 User-agent: Googlebot
-Allow: /
-
 User-agent: Bingbot
-Allow: /
-
 User-agent: OAI-SearchBot
-Allow: /
-
 User-agent: PerplexityBot
-Allow: /
-
 User-agent: Claude-SearchBot
-Allow: /
-
 User-agent: Applebot
-Allow: /
-
 User-agent: ChatGPT-User
-Allow: /
-
 User-agent: Claude-User
-Allow: /
-
 User-agent: Perplexity-User
 Allow: /
+Disallow: /internal/
+Disallow: /analytics/
+Disallow: /*?
 
 User-agent: GPTBot
 Disallow: /
@@ -384,9 +412,42 @@ Sitemap: {root}/sitemap.xml
     return Response(policy, mimetype="text/plain")
 
 
+@public.get("/llms.txt")
+def llms_txt():
+    root = public_origin()
+    body = f"""# UseThisModel
+
+UseThisModel is a continuously updated, source-backed catalog of AI models,
+exact provider routes, pricing, plans, offers, harness compatibility, releases,
+benchmarks, use cases, and workflows.
+
+Canonical URL: {root}/
+
+## Key resources
+- Models: {root}/models
+- Providers: {root}/providers
+- Harnesses: {root}/harnesses
+- Compatibility: {root}/compatibility
+- Current offers: {root}/deals
+- New releases: {root}/releases
+- Benchmarks: {root}/benchmarks
+- Use cases: {root}/use-cases
+- Workflows: {root}/workflows
+- Public API documentation: {root}/api
+- OpenAPI: {root}/api/v1/openapi.json
+- Sitemap: {root}/sitemap.xml
+
+## Data semantics
+Facts retain their source links, caveats, and last-verified timestamps. Unknown
+values remain unknown rather than being inferred. Prices identify their unit and
+currency; model identity is separate from an exact provider route.
+"""
+    return Response(body, mimetype="text/plain")
+
+
 @public.get("/sitemap.xml")
 def sitemap():
-    root = request.url_root.rstrip("/")
+    root = public_origin()
     groups = ["core", "models", "providers", "harnesses", "use-cases", "workflows"]
     body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">" + "".join(
         f"<sitemap><loc>{root}/sitemaps/{group}.xml</loc></sitemap>" for group in groups) + "</sitemapindex>"
@@ -394,7 +455,7 @@ def sitemap():
 
 
 def _urlset(paths):
-    root = request.url_root.rstrip("/")
+    root = public_origin()
     body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">" + "".join(
         f"<url><loc>{escape(root + path)}</loc></url>" for path in dict.fromkeys(paths)) + "</urlset>"
     return Response(body, mimetype="application/xml")
@@ -422,7 +483,7 @@ def sitemap_group(group):
 
 
 def _feed(title, path, entries):
-    root = request.url_root.rstrip("/")
+    root = public_origin()
     updated = datetime.now(timezone.utc).isoformat(timespec="seconds")
     def atom_time(value):
         value = str(value or datetime.now(timezone.utc).isoformat())
@@ -474,7 +535,7 @@ def expired_deal_feed():
 
 @public.get("/feeds/changes.json")
 def changes_json_feed():
-    root = request.url_root.rstrip("/")
+    root = public_origin()
     def json_time(value):
         value = str(value or datetime.now(timezone.utc).isoformat())
         return (value + "T00:00:00Z") if "T" not in value else value.replace("+00:00", "Z")

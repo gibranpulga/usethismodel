@@ -421,6 +421,29 @@ def test_seo_discovery_and_filter_index_policy(client):
     assert b'rel="canonical"' in filtered.data
 
 
+def test_machine_discovery_endpoints_and_canonical_origin(app):
+    app.config["PUBLIC_BASE_URL"] = "https://usethismodel.codefiction.net"
+    client = app.test_client()
+    home = client.get("/", headers={"Host": "untrusted.example"})
+    assert b'<link rel="canonical" href="https://usethismodel.codefiction.net/">' in home.data
+    robots = client.get("/robots.txt")
+    assert b"Sitemap: https://usethismodel.codefiction.net/sitemap.xml" in robots.data
+    sitemap = client.get("/sitemap.xml")
+    assert b"http://usethismodel.codefiction.net" not in sitemap.data
+    assert b"https://usethismodel.codefiction.net/sitemaps/core.xml" in sitemap.data
+    llms = client.get("/llms.txt")
+    assert llms.status_code == 200
+    assert llms.mimetype == "text/plain"
+    assert b"Public API documentation: https://usethismodel.codefiction.net/api" in llms.data
+    api_docs = client.get("/api")
+    assert b'<link rel=canonical href="https://usethismodel.codefiction.net/api">' in api_docs.data
+    spec = client.get("/api/v1/openapi.json").json
+    assert spec["openapi"] == "3.1.0"
+    assert spec["servers"] == [{"url": "https://usethismodel.codefiction.net/api/v1"}]
+    assert "/api/v1/models" in spec["paths"]
+    assert "/api/v1/models/{slug}" in spec["paths"]
+
+
 @pytest.mark.parametrize("path,needle", [
     ("/models/glm-5-3", b"GLM-5.3"),
     ("/providers/openrouter", b"OpenRouter"),
@@ -445,7 +468,11 @@ def test_public_discovery_pages_are_stable_and_factual(client, path, needle):
 
 def test_crawler_policy_separates_search_from_training_and_internal_pages(client):
     robots = client.get("/robots.txt").data
-    assert b"User-agent: OAI-SearchBot\nAllow: /" in robots
+    search_group = robots.split(b"User-agent: Googlebot", 1)[1].split(b"User-agent: GPTBot", 1)[0]
+    assert b"User-agent: OAI-SearchBot" in search_group
+    assert b"Allow: /" in search_group
+    assert b"Disallow: /internal/" in search_group
+    assert b"Disallow: /*?" in search_group
     assert b"User-agent: GPTBot\nDisallow: /" in robots
     assert b"Disallow: /internal/" in robots
     assert client.get("/internal/data-quality").status_code == 404

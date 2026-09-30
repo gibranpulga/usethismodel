@@ -113,7 +113,8 @@ container image stores the database at `/data/usethismodel.sqlite3`.
 
 ## Public read-only API and discovery
 
-Human-readable API documentation is at `/api`; the versioned JSON root is
+Human-readable API documentation is at `/api`; the generated OpenAPI 3.1
+description is at `/api/v1/openapi.json`; and the versioned JSON root is
 `/api/v1`. Resources cover models and individual canonical slugs, providers,
 harnesses, offers, releases, benchmarks, compatibility, and route search.
 Responses use a stable `{data, meta}` envelope and preserve null/`UNKNOWN`
@@ -121,7 +122,7 @@ instead of inferring missing facts. Combined filters include `tools=true`,
 `max_output_price=1`, `harness=hermes-agent`, `mcp=true`, `offers=current`,
 `releases=7-days`, and `type=3d`.
 
-Crawler discovery is exposed through a grouped `/sitemap.xml`, `/robots.txt`,
+Crawler discovery is exposed through `/llms.txt`, a grouped `/sitemap.xml`, `/robots.txt`,
 Atom feeds for releases, price changes, current deals and expired deals, and a
 combined JSON Feed at `/feeds/changes.json`. Arbitrary search and filter
 combinations are canonicalized to their base page and marked `noindex,follow`;
