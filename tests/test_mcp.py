@@ -78,6 +78,13 @@ def test_natural_search_applies_harness_and_price_facets(mcp_app):
     assert all(route["compatibility"]["harness"] == "Hermes Agent" for route in hermes["items"])
 
 
+def test_natural_unreal_mcp_search_requires_tool_capable_routes(mcp_app):
+    result = call("search_provider_routes", {"query": "OpenCode Unreal MCP", "limit": 20}).structured_content
+    assert result["items"]
+    assert all(route["compatibility"]["harness"] == "OpenCode" for route in result["items"])
+    assert all(route["capabilities"]["tools"] == "YES" for route in result["items"])
+
+
 def test_route_price_evidence_includes_source_freshness_and_price_terms(mcp_app):
     from pathlib import Path
     with mcp_app.app_context():

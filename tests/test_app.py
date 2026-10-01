@@ -478,6 +478,7 @@ def test_finder_workflows_and_shared_filter_urls(client, path, required):
         ("open source tools", {"open_weights": "1", "tools": "1"}),
         ("image to 3d", {"type": "3D generation", "image_to_3d": "1"}),
         ("newest models this month", {"release": "month", "sort": "newest"}),
+        ("OpenCode Unreal MCP", {"harness": "OpenCode", "workflow": "unreal-engine", "mcp": "1", "tools": "1"}),
     ],
 )
 def test_deterministic_quick_search(query, expected):
@@ -952,6 +953,9 @@ def test_api_natural_search_applies_and_reports_interpreted_facets(client):
     unreal = client.get('/api/v1/search?q=OpenCode+Unreal+MCP&limit=1').json
     assert unreal['meta']['filters']['workflow'] == 'unreal-engine'
     assert 'MCP workflow' in unreal['meta']['filters']['interpreted']
+    assert unreal['meta']['filters']['tools'] == '1'
+    explicit = client.get('/api/v1/compatibility?harness=opencode&workflow=unreal-engine&mcp=1&tools=1&limit=1').json
+    assert unreal['meta']['total'] == explicit['meta']['total']
 
 
 def test_free_route_api_applies_provider_and_access_semantics(client):

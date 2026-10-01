@@ -157,6 +157,7 @@ def interpret_search(filters):
         if re.search(rf"\b{re.escape(phrase)}(?:\s+mcp)?\b", text):
             set_if_empty("workflow", workflow, f"Workflow: {phrase.title()}")
             set_if_empty("mcp", "1", "MCP workflow")
+            set_if_empty("tools", "1", "Tool calling: yes")
             text = re.sub(rf"\b{re.escape(phrase)}(?:\s+mcp)?\b", " ", text)
             break
     if "commercial use" in text:
