@@ -43,6 +43,49 @@ PRESETS = {
 }
 
 
+def brand_mark(name):
+    """A local, deterministic wordmark fallback; no remote logo assets are fetched."""
+    value = str(name or "AI provider").strip()
+    normalized = value.lower().replace(" ", "")
+    brands = (
+        (("openai",), "openai", "AI"), (("anthropic",), "anthropic", "A"),
+        (("google",), "google", "G"), (("deepseek",), "deepseek", "DS"),
+        (("z.ai", "zhipu", "zai"), "zai", "Z"), (("alibaba", "qwen"), "qwen", "Q"),
+        (("mistral",), "mistral", "M"), (("moonshot", "kimi"), "kimi", "K"),
+        (("minimax",), "minimax", "MM"), (("openrouter",), "openrouter", "OR"),
+    )
+    for names, key, mark in brands:
+        if any(alias in normalized for alias in names):
+            return key, mark, value
+    words = [word for word in value.split() if word]
+    mark = "".join(word[0] for word in words[:2]).upper() or "AI"
+    return "fallback", mark, value
+
+
+def price_history_chart(records):
+    """Return SVG coordinates only for recorded observations on two or more dates."""
+    dated = []
+    for record in records:
+        try:
+            observed = date.fromisoformat(str(record.get("valid_from", ""))[:10])
+            amount = float(record["amount"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        dated.append((observed, amount))
+    dated.sort(key=lambda item: item[0])
+    if len(dated) < 2:
+        return None
+    first, last = dated[0][0], dated[-1][0]
+    span_days = max((last - first).days, 1)
+    low, high = min(amount for _, amount in dated), max(amount for _, amount in dated)
+    points = []
+    for observed, amount in dated:
+        x = 12 + 296 * (observed - first).days / span_days
+        y = 52 - 40 * ((amount - low) / (high - low) if high != low else 0.5)
+        points.append(f"{x:.1f},{y:.1f}")
+    return {"points": " ".join(points), "start": first.isoformat(), "end": last.isoformat()}
+
+
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_mapping(
@@ -153,6 +196,7 @@ def create_app(test_config=None):
             "robots_meta": "noindex,follow" if request.args else "index,follow",
             "csp_nonce": g.csp_nonce,
             "freshness_text": freshness_text,
+            "brand_mark": brand_mark,
         }
 
     def db():
@@ -303,6 +347,11 @@ def create_app(test_config=None):
         popular = rows("""SELECT m.id,m.canonical_name,m.canonical_slug,COUNT(o.id) route_count
           FROM models m JOIN provider_offerings o ON o.model_id=m.id GROUP BY m.id
           ORDER BY route_count DESC,m.canonical_name LIMIT 3""")
+        activity = rows("""SELECT m.canonical_name,m.canonical_slug,SUM(a.count) page_views
+          FROM analytics_daily a JOIN models m ON m.canonical_slug=a.dimension
+          WHERE a.event='model_view' AND a.day>=? GROUP BY m.id
+          ORDER BY page_views DESC,m.canonical_name LIMIT 3""",
+          ((date.today() - timedelta(days=29)).isoformat(),))
         def offer_rank(offer):
             kind = (offer.get("offer_type") or "").lower().replace("_", " ")
             free_route = kind in {"$0 route", "free", "free route"}
@@ -323,6 +372,7 @@ def create_app(test_config=None):
             "index.html", title="AI model, provider route & harness finder", filters=filters,
             interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters)[:6],
             deals=sorted(offer_rows(db()), key=offer_rank, reverse=True)[:4], latest=latest, popular=popular,
+            activity=activity,
             coding=route_rows(db(), {"tools": "1", "use_case": "coding", "sort": "weighted_cost", "limit": 3}),
             home_harnesses=rows("SELECT id,name,interfaces,supports_mcp FROM harnesses WHERE name IN ('Hermes Agent','Codex CLI','OpenCode','Pi') ORDER BY name"),
             media_routes=route_rows(db(), {"type": "3D generation", "limit": 3}), changes=changes[:3],
@@ -438,7 +488,10 @@ def create_app(test_config=None):
         route = next(iter(route_rows(db(), {"offering_id": offering_id})), None)
         peers = route_rows(db(), {"model_id": route["model_id"], "limit": 250})
         offers = [o for o in offer_rows(db(), include_expired=True) if o["offering_id"] in (None, offering_id) and o["provider_id"] == route["provider_id"]]
-        return render_template("route_detail.html", title=f"{route['canonical_name']} via {route['provider_name']}", route=route, history=price_history(db(), offering_id), peers=peers, offers=offers, route_variants=openrouter_variant_rows(db(), offering_id), sources=source_rows(db(), offering_id=offering_id), canonical_url=absolute_url(request.path), meta_description=f"Current {route['canonical_name']} pricing, limits, tool support, offers, price history, and sources for the {route['provider_name']} route.")
+        history = price_history(db(), offering_id)
+        for item in history:
+            item["chart"] = price_history_chart(item["records"])
+        return render_template("route_detail.html", title=f"{route['canonical_name']} via {route['provider_name']}", route=route, history=history, peers=peers, offers=offers, route_variants=openrouter_variant_rows(db(), offering_id), sources=source_rows(db(), offering_id=offering_id), canonical_url=absolute_url(request.path), meta_description=f"Current {route['canonical_name']} pricing, limits, tool support, offers, price history, and sources for the {route['provider_name']} route.")
 
     @app.get("/providers")
     def providers():
@@ -590,6 +643,18 @@ def create_app(test_config=None):
             if route:
                 selected.append(route)
         histories = {r["offering_id"]: price_history(db(), r["offering_id"]) for r in selected}
+        for items in histories.values():
+            for item in items:
+                item["chart"] = price_history_chart(item["records"])
+        price_deltas = {}
+        for field in ("input_price", "output_price"):
+            available = [route[field] for route in selected if route.get(field) is not None]
+            baseline = min(available) if available else None
+            for route in selected:
+                amount = route.get(field)
+                price_deltas.setdefault(route["offering_id"], {})[field] = (
+                    round(amount - baseline, 6) if amount is not None and baseline is not None else None
+                )
         from .benchmark_queries import comparable_groups
         model_ids = sorted({route["model_id"] for route in selected})
         marks = ",".join("?" for _ in model_ids) or "NULL"
@@ -604,7 +669,7 @@ def create_app(test_config=None):
         benchmark_groups = comparable_groups(evidence)
         return render_template("compare.html", title="Compare routes", routes=selected,
                                all_routes=all_routes, histories=histories, compare_query=compare_query,
-                               benchmark_groups=benchmark_groups)
+                               benchmark_groups=benchmark_groups, price_deltas=price_deltas)
 
     @app.get("/plans")
     def plans():
@@ -792,6 +857,8 @@ def create_app(test_config=None):
         cutoff = (date.today() - timedelta(days=30)).isoformat()
         release_models = rows("""SELECT m.*,l.name lab_name,
           (SELECT COUNT(*) FROM provider_offerings o WHERE o.model_id=m.id) route_count,
+          (SELECT o.tool_support FROM provider_offerings o WHERE o.model_id=m.id
+             ORDER BY CASE o.tool_support WHEN 'YES' THEN 0 WHEN 'UNKNOWN' THEN 1 ELSE 2 END LIMIT 1) tool_support,
           (SELECT MAX(COALESCE(o.last_verified_at,o.fetched_at)) FROM provider_offerings o WHERE o.model_id=m.id) route_verified
           FROM models m LEFT JOIN labs l ON l.id=m.lab_id
           WHERE m.released_at IS NOT NULL AND m.released_at>=? AND m.status!='DEPRECATED'

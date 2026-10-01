@@ -96,6 +96,21 @@ def test_homepage_release_cards_expose_date_provenance_and_capabilities(client):
     assert 'href="/releases"' in body
 
 
+def test_homepage_popularity_uses_local_model_page_views_and_provider_shortcuts(client, app):
+    with app.app_context():
+        model = get_db().execute("SELECT canonical_slug FROM models LIMIT 1").fetchone()
+        from app.analytics import record
+        record(get_db(), "model_view", model["canonical_slug"])
+        record(get_db(), "model_view", model["canonical_slug"])
+    body = client.get("/").get_data(as_text=True)
+    assert "Popular on UseThisModel" in body
+    assert "2 page views on UseThisModel" in body
+    assert "global usage" in body
+    models = client.get("/models").get_data(as_text=True)
+    assert 'href="/models?provider=OpenRouter"' in models
+    assert 'aria-label="Quick provider filters"' in models
+
+
 def test_finder_harness_select_uses_canonical_slugs_and_modality_labels(client):
     response = client.get("/models")
     body = response.get_data(as_text=True)
@@ -981,6 +996,8 @@ def test_llms_full_is_current_conditional_and_sitemap_lastmod_is_valid(client):
     assert response.status_code == 200
     assert b'## Models with the broadest current route coverage' in response.data
     assert b'## Harnesses' in response.data and b'## Current offers' in response.data
+    assert b'on UseThisModel](https://usethismodel.com/providers/' in response.data
+    assert b'Official website:' in response.data
     assert response.headers.get('ETag')
     assert client.get('/llms-full.txt', headers={'If-None-Match': response.headers['ETag']}).status_code == 304
     changes = client.get('/feeds/changes.json')
@@ -992,6 +1009,17 @@ def test_llms_full_is_current_conditional_and_sitemap_lastmod_is_valid(client):
     dates = [node.text for node in parsed.findall('.//s:lastmod', ns)]
     assert dates and all(re.fullmatch(r'\d{4}-\d{2}-\d{2}', value) for value in dates)
     assert sitemap.headers.get('ETag')
+
+
+def test_price_history_chart_uses_only_multiple_recorded_dates():
+    from app import price_history_chart
+    assert price_history_chart([{"valid_from": "2026-01-01", "amount": 1.0}]) is None
+    chart = price_history_chart([
+        {"valid_from": "2026-01-01", "amount": 1.0},
+        {"valid_from": "2026-02-01", "amount": 0.5},
+    ])
+    assert chart["start"] == "2026-01-01" and chart["end"] == "2026-02-01"
+    assert len(chart["points"].split()) == 2
 
 
 def test_old_public_paths_redirect_to_canonical_navigation(client):

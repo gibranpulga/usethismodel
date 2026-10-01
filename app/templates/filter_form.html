@@ -1,4 +1,8 @@
 <form class="filter-form" method="get" action="{{ action or '/models' }}">
+  <nav class="provider-shortcuts" aria-label="Quick provider filters">
+    {% for label,provider in [('All', ''),('OpenRouter','OpenRouter'),('OpenAI','OpenAI'),('Anthropic','Anthropic'),('Google','Google'),('DeepSeek','DeepSeek'),('Z.ai','Z.ai'),('Qwen','Qwen'),('Mistral','Mistral')] %}<a class="provider-chip{% if (filters.get('provider','')|lower) == (provider|lower) %} active{% endif %}" href="{{ action or '/models' }}{% if provider %}?provider={{ provider|urlencode }}{% endif %}"{% if (filters.get('provider','')|lower) == (provider|lower) %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+    <a class="provider-chip" href="{{ action or '/models' }}#advanced-filters">More…</a>
+  </nav>
   <div class="filter-search"><input id="model-search" name="q" value="{{ filters.get('q','') }}" placeholder="Try “cheap coding”, “GLM 5.3”, “OpenCode Unreal MCP”…" aria-label="Search models and routes"><button class="button" type="submit">Show choices</button></div>
   {% if interpreted %}<div class="active-filters" aria-label="Interpreted search filters"><span>Understood as:</span>{% for item in interpreted %}<span class="filter-chip">{{ item }}</span>{% endfor %}</div>{% endif %}
   <div class="filter-grid decision-filters">
@@ -10,7 +14,7 @@
   <fieldset class="capability-picker"><legend>Required capabilities</legend><div class="toggle-row core-toggles">
     {% for field,label,help in [('tools','Tool calling','The route can send structured tool or function calls.'),('mcp','MCP workflow','The harness can host MCP and the route can call tools.'),('vision','Vision','The route accepts image input.'),('open_weights','Open weights','Model weights are publicly available; this does not mean hosted use is free.')] %}<label title="{{ help }}"><input type="checkbox" name="{{ field }}" value="1" {% if filters.get(field) == '1' %}checked{% endif %}> {{ label }} <span class="help" aria-hidden="true">?</span></label>{% endfor %}
   </div></fieldset>
-  <details {% if filters.get('context') or filters.get('input_max') or filters.get('provider') or filters.get('type') or filters.get('lab') or filters.get('access') or filters.get('reasoning') or filters.get('structured') or filters.get('caching') or filters.get('batch') or filters.get('deal') or filters.get('subscription') or filters.get('text_to_3d') or filters.get('image_to_3d') or filters.get('commercial') %}open{% endif %}><summary>Advanced filters</summary>
+  <details id="advanced-filters" {% if filters.get('context') or filters.get('input_max') or filters.get('provider') or filters.get('type') or filters.get('lab') or filters.get('access') or filters.get('reasoning') or filters.get('structured') or filters.get('caching') or filters.get('batch') or filters.get('deal') or filters.get('subscription') or filters.get('text_to_3d') or filters.get('image_to_3d') or filters.get('commercial') %}open{% endif %}><summary>Advanced filters</summary>
     <div class="filter-grid advanced-filter-grid">
       <label>Category<select name="type"><option value="">Any category</option>{% for type in options.types %}<option {% if filters.get('type') == type %}selected{% endif %}>{{ type }}</option>{% endfor %}</select></label>
       <label>Provider<select name="provider"><option value="">Any provider</option>{% for provider in options.providers %}<option {% if filters.get('provider') == provider %}selected{% endif %}>{{ provider }}</option>{% endfor %}</select></label>

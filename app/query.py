@@ -421,6 +421,7 @@ def price_history(db, offering_id):
             "current": current["amount"] if current else None,
             "previous": prior,
             "change_percent": change,
+            "change_amount": (reference["amount"] - prior) if prior is not None else None,
             "date_changed": reference["valid_from"],
             "lowest": min(r["amount"] for r in records),
             "context_threshold": threshold,

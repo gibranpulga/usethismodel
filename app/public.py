@@ -699,7 +699,9 @@ def llms_full_txt():
         lines.append(f"- [{row['canonical_name']}]({root}/models/{row['canonical_slug']}) — {row['vendor']}; {modality_category(row['modality'], row['canonical_name'])}; {row['routes']} routes; release {row['released_at'] or 'unknown'} ({row['release_date_kind']}).")
     lines.extend(["", "## Providers"])
     for row in db.execute("SELECT name,website_url FROM providers WHERE canonical_provider_id IS NULL ORDER BY name LIMIT 50"):
-        lines.append(f"- [{row['name']}]({row['website_url'] or root + '/providers'})")
+        provider_page = root + "/providers/" + slugify(row["name"])
+        official = f" — Official website: [{row['name']}]({row['website_url']})" if row["website_url"] else " — Official website: not published"
+        lines.append(f"- [{row['name']} on UseThisModel]({provider_page}){official}")
     lines.extend(["", "## Harnesses"])
     for row in db.execute("SELECT name,website_url FROM harnesses ORDER BY name"):
         lines.append(f"- [{row['name']}]({row['website_url'] or root + '/harnesses'})")

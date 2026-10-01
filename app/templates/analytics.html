@@ -1,4 +1,4 @@
 {% extends "placeholder.html" %}{% block content %}
 <section class="page-intro compact"><div class="eyebrow">PRIVATE OPERATIONS</div><h1>Aggregate analytics</h1><p>Thirty-day counters only. No search text, prompt content, IP address, cookie, or visitor identifier is collected.</p></section>
-<div class="table-wrap"><table class="data-table"><thead><tr><th>Day</th><th>Event</th><th>Safe dimension</th><th>Count</th></tr></thead><tbody>{% for row in analytics %}<tr><td>{{ row.day }}</td><td>{{ row.event }}</td><td>{{ row.dimension or '—' }}</td><td>{{ row.count }}</td></tr>{% else %}<tr><td colspan="4">No aggregate events recorded yet.</td></tr>{% endfor %}</tbody></table></div>
+<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">Day</th><th scope="col">Event</th><th scope="col">Safe dimension</th><th scope="col">Count</th></tr></thead><tbody>{% for row in analytics %}<tr><td>{{ row.day }}</td><td>{{ row.event }}</td><td>{{ row.dimension or '—' }}</td><td>{{ row.count }}</td></tr>{% else %}<tr><td colspan="4">No aggregate events recorded yet.</td></tr>{% endfor %}</tbody></table></div>
 {% endblock %}
