@@ -101,3 +101,20 @@ def test_wordmarks_keep_readable_wide_intrinsic_space():
     assert resolve_logo("provider", "OpenRouter")["wide"] is False
     css = Path("app/static/product.css").read_text()
     assert ".entity-logo-wide.logo-small{width:64px}" in css
+
+
+def test_provider_only_and_model_offers_choose_distinct_logo_entities():
+    from app.logo_system import offer_logo_identity
+
+    assert offer_logo_identity(None, None, "OpenRouter Free Models Router", "OpenRouter") == (
+        "provider",
+        "OpenRouter",
+    )
+    assert offer_logo_identity("DeepSeek", "StreamLake", "DeepSeek V4", "OpenRouter") == (
+        "lab",
+        "DeepSeek",
+    )
+    assert offer_logo_identity("Inception", None, "Mercury 2.5", "OpenRouter") == (
+        "lab",
+        "Inception",
+    )

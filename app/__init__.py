@@ -187,6 +187,7 @@ def create_app(test_config=None):
             "human_offer_model": human_offer_model,
             "resolve_logo": __import__("app.logo_system", fromlist=["resolve_logo"]).resolve_logo,
             "logo": __import__("app.logo_system", fromlist=["logo_html"]).logo_html,
+            "offer_logo_identity": __import__("app.logo_system", fromlist=["offer_logo_identity"]).offer_logo_identity,
         }
 
     def db():

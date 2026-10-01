@@ -180,3 +180,15 @@ def logo_html(entity_type, name, size="small"):
     return Markup('<span class="entity-logo-fallback logo-{}" aria-hidden="true">{}</span>').format(
         escape(size), escape(mark["initials"])
     )
+
+
+def offer_logo_identity(lab_name, upstream_provider, canonical_name, provider_name):
+    """Choose a model lab mark for model offers, and a provider mark otherwise."""
+    lab_candidate = lab_name or upstream_provider or canonical_name
+    if lab_candidate and resolve_logo("lab", lab_candidate)["supported"]:
+        return "lab", lab_candidate
+    if lab_name and resolve_logo("provider", lab_name)["supported"]:
+        return "provider", lab_name
+    if not lab_name and not upstream_provider:
+        return "provider", provider_name
+    return "lab", lab_candidate or provider_name
