@@ -62,6 +62,18 @@ def brand_mark(name):
     return "fallback", mark, value
 
 
+def human_offer_model(name):
+    """Trim provider prefixes and catalog date suffixes from compact offer titles."""
+    value = str(name or "AI model").strip()
+    value = re.sub(r"^(?:DeepSeek|Anthropic|OpenAI|Google|Qwen|Alibaba|Mistral|Moonshot|MiniMax|Inception|inclusionAI|Z\.ai)\s*:\s*", "", value, flags=re.I)
+    return re.sub(r"\s+(?:20\d{2}|\d{4})$", "", value)
+
+
+def brand_logo(key):
+    assets = {"anthropic", "google", "deepseek", "qwen", "mistral", "kimi", "minimax", "openrouter"}
+    return f"/static/logos/{key}.svg" if key in assets else None
+
+
 def price_history_chart(records):
     """Return SVG coordinates only for recorded observations on two or more dates."""
     dated = []
@@ -197,6 +209,8 @@ def create_app(test_config=None):
             "csp_nonce": g.csp_nonce,
             "freshness_text": freshness_text,
             "brand_mark": brand_mark,
+            "human_offer_model": human_offer_model,
+            "brand_logo": brand_logo,
         }
 
     def db():
@@ -326,32 +340,33 @@ def create_app(test_config=None):
     @app.get("/")
     def home():
         filters, interpreted = interpreted_filters()
-        latest = rows("""SELECT m.id,m.canonical_name,m.canonical_slug,m.vendor,m.modality,m.released_at,
+        recent_releases = rows("""SELECT m.id,m.canonical_name,m.canonical_slug,m.vendor,m.modality,m.released_at,
           m.release_date_kind,l.name lab_name,
-          (SELECT COUNT(*) FROM provider_offerings o WHERE o.model_id=m.id) route_count,
-          (SELECT tool_support FROM provider_offerings o WHERE o.model_id=m.id
-             ORDER BY CASE tool_support WHEN 'YES' THEN 0 WHEN 'UNKNOWN' THEN 1 ELSE 2 END LIMIT 1) tool_support,
-          (SELECT name FROM sources s JOIN data_observations d ON d.source_id=s.id
-             WHERE d.entity='model:'||m.id AND d.field IN ('released_at','release_date') ORDER BY d.id DESC LIMIT 1) release_source_name,
-          (SELECT url FROM sources s JOIN data_observations d ON d.source_id=s.id
-             WHERE d.entity='model:'||m.id AND d.field IN ('released_at','release_date') ORDER BY d.id DESC LIMIT 1) release_source_url
+          (SELECT COUNT(*) FROM provider_offerings o WHERE o.model_id=m.id AND o.lifecycle_status!='REMOVED') route_count,
+          (SELECT COUNT(*) FROM benchmark_results b WHERE b.model_id=m.id) benchmark_count,
+          COALESCE((SELECT SUM(a.count) FROM analytics_daily a WHERE a.dimension=m.canonical_slug
+             AND a.event='model_view' AND a.day>=?),0) site_activity
           FROM models m LEFT JOIN labs l ON l.id=m.lab_id
-          WHERE m.released_at>=? AND m.status!='DEPRECATED'
-          ORDER BY m.released_at DESC,m.canonical_name LIMIT 3""",
-          ((date.today() - timedelta(days=7)).isoformat(),))
-        latest = [dict(item) for item in latest]
-        for item in latest:
+          WHERE m.released_at>=? AND m.status!='DEPRECATED'""",
+          ((date.today() - timedelta(days=29)).isoformat(), (date.today() - timedelta(days=7)).isoformat()))
+        # Editorial prominence is deterministic and explainable. Lab recognition is one
+        # small signal; route, benchmark, official-release, and real usage evidence can
+        # also make an emerging lab's release notable.
+        major_labs = {"openai", "anthropic", "google", "deepseek", "z.ai", "zhipu ai",
+                      "alibaba", "qwen", "moonshot", "kimi", "minimax", "mistral", "meta"}
+        recent_releases = [dict(item) for item in recent_releases]
+        for item in recent_releases:
+            lab = (item["lab_name"] or item["vendor"] or "").casefold()
+            score = (2 if any(name in lab for name in major_labs) else 0)
+            score += 3 if item["route_count"] >= 3 else 2 if item["route_count"] >= 2 else 0
+            score += 2 if item["benchmark_count"] else 0
+            score += 2 if item["release_date_kind"] == "official" else 0
+            score += min(3, int(item["site_activity"]).bit_length())
+            item["prominence"] = score
             item["category"] = modality_category(item["modality"], item["canonical_name"])
-            item["release_confidence"] = {"official": "Official", "publisher_metadata": "Publisher metadata",
-                "aggregator": "Aggregator"}.get(item["release_date_kind"], "Unverified")
-        popular = rows("""SELECT m.id,m.canonical_name,m.canonical_slug,COUNT(o.id) route_count
-          FROM models m JOIN provider_offerings o ON o.model_id=m.id GROUP BY m.id
-          ORDER BY route_count DESC,m.canonical_name LIMIT 3""")
-        activity = rows("""SELECT m.canonical_name,m.canonical_slug,SUM(a.count) page_views
-          FROM analytics_daily a JOIN models m ON m.canonical_slug=a.dimension
-          WHERE a.event='model_view' AND a.day>=? GROUP BY m.id
-          ORDER BY page_views DESC,m.canonical_name LIMIT 3""",
-          ((date.today() - timedelta(days=29)).isoformat(),))
+        ranked_releases = sorted(recent_releases,
+            key=lambda item: (item["prominence"], item["released_at"], item["canonical_name"]), reverse=True)
+        latest = [item for item in ranked_releases if item["prominence"] >= 2][:3]
         def offer_rank(offer):
             kind = (offer.get("offer_type") or "").lower().replace("_", " ")
             free_route = kind in {"$0 route", "free", "free route"}
@@ -361,27 +376,17 @@ def create_app(test_config=None):
                 discount = 0
             return (free_route, discount, offer.get("last_verified_at") or "")
 
-        changes = rows("""SELECT o.id offering_id,m.canonical_name,p.name provider_name,pr.price_type,
-          pr.amount,pr.unit,pr.valid_from FROM pricing_records pr
-          JOIN provider_offerings o ON o.id=pr.offering_id JOIN models m ON m.id=o.model_id
-          JOIN providers p ON p.id=o.provider_id WHERE pr.valid_until IS NULL AND EXISTS(
-            SELECT 1 FROM pricing_records old WHERE old.offering_id=pr.offering_id
-            AND old.price_type=pr.price_type AND old.id!=pr.id)
-          ORDER BY pr.valid_from DESC LIMIT 6""")
         return render_template(
-            "index.html", title="AI model, provider route & harness finder", filters=filters,
-            interpreted=interpreted, options=filter_options(db()), routes=compatible_routes(filters)[:6],
-            deals=sorted(offer_rows(db()), key=offer_rank, reverse=True)[:4], latest=latest, popular=popular,
-            activity=activity,
-            coding=route_rows(db(), {"tools": "1", "use_case": "coding", "sort": "weighted_cost", "limit": 3}),
-            home_harnesses=rows("SELECT id,name,interfaces,supports_mcp FROM harnesses WHERE name IN ('Hermes Agent','Codex CLI','OpenCode','Pi') ORDER BY name"),
-            media_routes=route_rows(db(), {"type": "3D generation", "limit": 3}), changes=changes[:3],
+            "index.html", title="Find an AI model", filters=filters,
+            interpreted=interpreted, options=filter_options(db()),
+            routes=compatible_routes(filters)[:6] if filters else [],
+            deals=sorted(offer_rows(db()), key=offer_rank, reverse=True)[:4], latest=latest,
             structured_data={
                 "@context": "https://schema.org", "@type": "Dataset",
                 "name": "UseThisModel AI model route catalog", "url": absolute_url("/"),
                 "description": "Source-backed AI models, provider routes, prices, offers, harness compatibility, releases, and benchmarks.",
             },
-            meta_description="Find current AI model routes, deals, new releases, coding models, harness compatibility, and 3D generation APIs from source-backed data.",
+            meta_description="Find AI models by what you need. Compare current prices, explore offers, and see what works with your tools.",
         )
 
     @app.get("/models")
@@ -405,7 +410,7 @@ def create_app(test_config=None):
             filter_errors.append(str(exc))
         page_params = {key: value for key, value in filters.items() if key != "page"}
         return render_template(
-            "models.html", title="Models & provider routes", filters=display_filters,
+            "models.html", title="AI models", filters=display_filters,
             interpreted=interpreted, options=filter_options(db()), routes=found[:page_size],
             page=page, has_more=len(found) > page_size, default_view=not filters,
             prev_url=("/models?" + urlencode({**page_params, "page": page - 1})) if page > 1 else None,
@@ -854,31 +859,42 @@ def create_app(test_config=None):
 
     @app.get("/releases")
     def releases():
-        cutoff = (date.today() - timedelta(days=30)).isoformat()
+        try:
+            release_page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            release_page = 1
+        release_page_size = 50
+        release_count = db().execute("SELECT COUNT(*) FROM models WHERE released_at IS NOT NULL AND status!='DEPRECATED'").fetchone()[0]
         release_models = rows("""SELECT m.*,l.name lab_name,
           (SELECT COUNT(*) FROM provider_offerings o WHERE o.model_id=m.id) route_count,
           (SELECT o.tool_support FROM provider_offerings o WHERE o.model_id=m.id
              ORDER BY CASE o.tool_support WHEN 'YES' THEN 0 WHEN 'UNKNOWN' THEN 1 ELSE 2 END LIMIT 1) tool_support,
-          (SELECT MAX(COALESCE(o.last_verified_at,o.fetched_at)) FROM provider_offerings o WHERE o.model_id=m.id) route_verified
+          (SELECT s.name FROM data_observations d JOIN sources s ON s.id=d.source_id
+             WHERE d.entity='model:'||m.id AND d.field IN ('released_at','release_date') ORDER BY d.id DESC LIMIT 1) release_source_name,
+          (SELECT s.url FROM data_observations d JOIN sources s ON s.id=d.source_id
+             WHERE d.entity='model:'||m.id AND d.field IN ('released_at','release_date') ORDER BY d.id DESC LIMIT 1) release_source_url
           FROM models m LEFT JOIN labs l ON l.id=m.lab_id
-          WHERE m.released_at IS NOT NULL AND m.released_at>=? AND m.status!='DEPRECATED'
-          ORDER BY m.released_at DESC,m.canonical_name""", (cutoff,))
-        today = date.today().isoformat()
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
+          WHERE m.released_at IS NOT NULL AND m.status!='DEPRECATED'
+          ORDER BY m.released_at DESC,m.canonical_name LIMIT ? OFFSET ?""",
+          (release_page_size, (release_page-1)*release_page_size))
         release_models = [dict(item) for item in release_models]
+        groups = []
         for item in release_models:
-            observations = rows("""SELECT s.name,s.url FROM data_observations d LEFT JOIN sources s ON s.id=d.source_id
-                WHERE d.entity=? AND d.field IN ('released_at','release_date') ORDER BY d.id DESC LIMIT 1""",
-                (f"model:{item['id']}",))
-            item["release_source"] = observations[0] if observations else None
+            item["release_source"] = ({"name": item["release_source_name"], "url": item["release_source_url"]}
+                                      if item["release_source_url"] else None)
             item["release_confidence"] = {"official":"Official", "publisher_metadata":"Publisher metadata", "aggregator":"Aggregator"}.get(item["release_date_kind"], "Unverified")
             item["category"] = modality_category(item["modality"], item["canonical_name"])
-            item["group"] = "Today" if item["released_at"] == today else "Yesterday" if item["released_at"] == yesterday else "This week" if item["released_at"] >= (date.today()-timedelta(days=7)).isoformat() else "Earlier this month"
+            item["group"] = item["released_at"][:7]
+            if item["group"] not in groups:
+                groups.append(item["group"])
         canonical = absolute_url("/releases")
         schema = {"@context": "https://schema.org", "@type": "Dataset", "name": "New AI model releases",
                   "description": "Recently released models with current provider routes, prices, capabilities and source verification.", "url": canonical}
         return render_template("releases.html", title="New releases", release_models=release_models,
-          groups=["Today", "Yesterday", "This week", "Earlier this month"], structured_data=schema,
+          groups=groups, release_count=release_count, release_page=release_page,
+          release_prev_url=f"/releases?page={release_page-1}" if release_page > 1 else None,
+          release_next_url=f"/releases?page={release_page+1}" if release_page*release_page_size < release_count else None,
+          structured_data=schema,
           canonical_url=canonical, meta_description="Chronological AI model releases with date provenance, capabilities, and exact provider route counts.")
 
     @app.get("/new-releases")

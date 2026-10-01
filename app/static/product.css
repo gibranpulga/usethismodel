@@ -3,6 +3,33 @@
 @media(max-width:1050px){.route-hierarchy{grid-template-columns:1fr 1fr}.route-hierarchy i{display:none}}
 @media(max-width:650px){nav{overflow-x:auto;overflow-y:hidden;align-items:start}nav>a{flex:0 0 auto}.nav-more{flex:0 0 auto;margin:0}.nav-more summary{height:32px;white-space:nowrap;padding:0 9px}.nav-more div{position:absolute;z-index:10;right:12px;width:190px;padding:7px;background:var(--surface);border:1px solid var(--border);border-radius:7px;box-shadow:0 8px 30px #0008}.nav-more div a{background:var(--surface);height:34px}.decision-filters,.route-hierarchy{grid-template-columns:1fr}.setup-callout,.compare-search{align-items:stretch;flex-direction:column}.route-card-head{flex-direction:column}.card-actions{justify-content:flex-start}.price-line{flex-wrap:wrap}.offer-meta,.history-card dl{grid-template-columns:auto minmax(0,1fr)!important}.data-table,.compare-table{min-width:580px}.setup-options label{min-width:0}}
 
+/* Human-first homepage: a direct search, compact decisions, and fewer sections. */
+.home-intro{padding:42px 0 16px;align-items:start}
+.home-intro h1{font-size:clamp(30px,4vw,46px);margin:0;letter-spacing:-.05em}
+.home-search{display:flex;gap:9px;max-width:780px;margin:4px 0 28px}
+.home-search input{flex:1;min-width:0;height:48px;padding:0 15px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:9px;font:15px system-ui,sans-serif}
+.home-search .button{min-width:94px;border-radius:9px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.section-head:has(>h2){margin-top:32px}
+.offer-highlights{gap:9px}
+.offer-tile{min-height:112px;padding:12px;gap:5px}
+.home-card-brand{display:flex;align-items:center;gap:8px;padding-right:52px}
+.home-card-brand strong{font-size:14px;line-height:1.25;color:var(--text)}
+.home-card-brand .provider-avatar{width:27px;height:27px;font-size:10px}
+.home-card-provider,.offer-price{font-size:11px;color:var(--muted)}
+.offer-tile .offer-pill{top:11px;right:10px}
+.offer-tile>small{font-size:10px;color:var(--muted)}
+.home-releases{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.home-releases .release-item{padding:12px;gap:9px;min-height:100px}
+.home-releases .release-main h3{font-size:14px;margin:0 0 4px}
+.home-releases .release-main p{margin:0;color:var(--muted);font-size:11px}
+.home-releases .tags{margin-top:8px}
+.home-releases .tags span{font-size:10px;padding:3px 6px}
+.finder-panel{margin-top:32px}
+.finder-panel .finder-intro h2{margin:0}
+.finder-panel .filter-form{margin-top:10px}
+@media(max-width:700px){.home-intro{padding:28px 0 12px}.home-intro h1{font-size:30px}.home-search{margin-bottom:22px}.home-search input{height:44px;font-size:13px}.home-search .button{min-width:74px}.home-releases{grid-template-columns:1fr}.home-releases .release-item{min-height:unset}.offer-highlights{grid-template-columns:1fr 1fr}.offer-tile{min-height:108px}.home-card-brand strong{font-size:12px}.home-card-brand{padding-right:0}.offer-tile .offer-pill{top:8px;right:8px;font-size:9px}.section-head:has(>h2){margin-top:26px}}
+
 .provider-shortcuts{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;overflow:visible}
 .provider-chip{display:inline-flex;align-items:center;min-height:30px;padding:4px 9px;border:1px solid var(--border);border-radius:999px;background:var(--surface2);color:var(--text);font-size:11px;text-decoration:none;white-space:nowrap}
 .provider-chip:hover,.provider-chip.active{border-color:var(--accent);color:var(--accent);background:var(--surface)}
@@ -23,6 +50,13 @@ html[data-theme="dark"] .provider-avatar[class*="brand-"]{--brand-bg:#202936;--b
 .price-down{color:var(--success);font-weight:700}.price-up{color:#b43e42;font-weight:700}
 html[data-theme="dark"] .price-up{color:#ff9296}
 .price-history-chart{margin:12px 0;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2)}
+.advanced-details{margin-top:8px;color:var(--muted);font-size:11px;line-height:1.5}
+.advanced-details summary{display:inline-block;cursor:pointer;color:var(--muted);text-decoration:underline;text-decoration-color:var(--border);text-underline-offset:3px}
+.advanced-details[open] summary{margin-bottom:5px}
+.advanced-details p{margin:4px 0}
+.offer-capability{font-size:11px;color:var(--muted);margin:4px 0}
+.offer-expiry{font-size:11px;color:var(--text);margin:4px 0}
+.provider-logo{width:27px;height:27px;padding:4px;object-fit:contain;flex:none;background:#fff;border:1px solid var(--border);border-radius:7px}
 .price-history-chart svg{display:block;width:100%;height:76px;overflow:visible}
 .price-history-chart line{stroke:var(--border);stroke-width:1}
 .price-history-chart polyline{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}

@@ -86,26 +86,32 @@ def test_homepage_satisfies_public_monitor_content_checks(client):
     assert all(marker in response.data for marker in REQUIRED['homepage'])
 
 
-def test_homepage_release_cards_expose_date_provenance_and_capabilities(client):
+def test_homepage_is_human_first_and_keeps_full_release_catalog(client):
     response = client.get("/")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "New models this week" in body
-    assert "Release provenance:" in body
-    assert "Tools:" in body
+    assert 'name="q"' in body
+    assert "Release provenance:" not in body
+    assert "date confidence" not in body
+    assert "Most available models" not in body
+    assert "Appearance" not in body
+    assert "CyberHeabsy" not in body
     assert 'href="/releases"' in body
+    all_releases = client.get("/api/v1/releases?limit=250").json
+    release_page = client.get("/releases").get_data(as_text=True)
+    assert len(all_releases["data"]) > 3
+    assert all(release["name"] in release_page for release in all_releases["data"])
 
 
-def test_homepage_popularity_uses_local_model_page_views_and_provider_shortcuts(client, app):
+def test_homepage_omits_usage_section_until_editorial_signal_is_meaningful(client, app):
     with app.app_context():
         model = get_db().execute("SELECT canonical_slug FROM models LIMIT 1").fetchone()
         from app.analytics import record
         record(get_db(), "model_view", model["canonical_slug"])
         record(get_db(), "model_view", model["canonical_slug"])
     body = client.get("/").get_data(as_text=True)
-    assert "Popular on UseThisModel" in body
-    assert "2 page views on UseThisModel" in body
-    assert "global usage" in body
+    assert "Popular on UseThisModel" not in body
     models = client.get("/models").get_data(as_text=True)
     assert 'href="/models?provider=OpenRouter"' in models
     assert 'aria-label="Quick provider filters"' in models
@@ -121,9 +127,9 @@ def test_finder_harness_select_uses_canonical_slugs_and_modality_labels(client):
 
 def test_true_free_and_subscription_access_stay_visibly_distinct(client):
     body = client.get("/models?included=1").get_data(as_text=True)
-    assert "Included with" in body or "SUBSCRIPTION REQUIRED" in body
+    assert "Included with" in body or "SUBSCRIPTION" in body
     free_body = client.get("/models?free=1").get_data(as_text=True)
-    assert "FREE API" in free_body or "No route matches" in free_body
+    assert "FREE" in free_body or "No route matches" in free_body
     assert "FREE route" not in free_body
 
 
@@ -541,7 +547,8 @@ def test_first_party_price_provenance_tiers_and_batch_classes_are_public(app, cl
     assert tuple(zai) == (None, 0, None)
     deals = client.get("/deals?provider=MiniMax%20Token%20Plan%20%28minimax.io%29")
     assert deals.status_code == 200
-    assert b"Not published" in deals.data
+    assert b"Expires" in deals.data and b"Unknown" in deals.data
+    assert b"Not published" not in deals.data
 
     openrouter = client.get("/api/v1/models/openrouter/free").json["data"]["routes"]
     router_route = next(row for row in openrouter if row["provider"]["name"] == "OpenRouter")
@@ -576,7 +583,8 @@ def test_offers_rankings_and_personal_setup_are_visible(client):
     offers = client.get("/deals")
     assert b"OpenRouter Free Models Router" in offers.data
     assert b"OpenAI Batch API" in offers.data
-    assert b"First seen" in offers.data and b"Last verified" in offers.data
+    assert b"Details and sources" in offers.data
+    assert b"Verified" in offers.data
     rankings = client.get("/rankings")
     assert b"0.70" in rankings.data and b"Lowest estimated token cost for coding routes" in rankings.data
     assert b"no hidden universal" in rankings.data
@@ -843,7 +851,8 @@ def test_dense_decision_pages_limit_initial_rendering(client):
     detail = client.get("/models/zhipuai/glm-5.3")
     assert 1 <= detail.data.count(b'class="route-card"') <= 12
     models = client.get("/models").data
-    assert all(label in models for label in (b"MODEL", b"PROVIDER ROUTE", b"PRICE", b"HARNESS FIT"))
+    assert b"AI models" in models and b"Model options" in models
+    assert "MODEL → PROVIDER ROUTE → PRICE → HARNESS FIT".encode() not in models
 
 
 @pytest.mark.parametrize("path", [
@@ -1002,15 +1011,17 @@ def test_modality_taxonomy_preserves_source_modality(client):
         assert len(filter_options(get_db())['types']) <= 10
 
 
-def test_releases_page_is_chronological_and_labels_date_provenance(client):
+def test_releases_page_is_chronological_and_hides_source_metadata_by_default(client):
     response = client.get('/releases')
     assert response.status_code == 200
     body = response.data.decode()
-    assert 'Official date' in body or 'Aggregator date' in body or 'Publisher metadata date' in body or 'Unverified date' in body
+    assert 'Sources and date details' in body
+    assert 'Aggregator date' not in body
     import re
     dates = re.findall(r'Released (\d{4}-\d{2}-\d{2})', body)
     assert dates == sorted(dates, reverse=True)
-    assert 'route' in body.lower()
+    human_text = re.sub(r'<details\b.*?</details>', '', body, flags=re.S)
+    assert 'date confidence' not in human_text.lower()
 
 
 def test_offers_page_exposes_catalog_pagination_and_filters(client):

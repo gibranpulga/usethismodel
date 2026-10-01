@@ -444,13 +444,14 @@ def price_history(db, offering_id):
 def offer_rows(db, include_expired=False):
     condition = "1=1" if include_expired else "x.status='ACTIVE' AND (x.starts_at IS NULL OR x.starts_at<=date('now')) AND (x.ends_at IS NULL OR x.ends_at>=date('now'))"
     return [dict(r) for r in db.execute(f"""
-      SELECT x.*,p.name provider_name,o.api_model_id,m.canonical_name,o.tool_support,
+      SELECT x.*,p.name provider_name,o.api_model_id,m.canonical_name,l.name lab_name,o.tool_support,
         o.context_limit,o.access_semantics,o.access_requirement,o.rate_limit_note,o.privacy_caveat route_privacy_caveat,
         rv.upstream_provider,rv.provider_tag,rv.endpoint_status,rv.quantization,
         s.name source_name,s.url source_url,s.source_type source_type
       FROM offers x JOIN providers p ON p.id=x.provider_id
       LEFT JOIN provider_offerings o ON o.id=x.offering_id
       LEFT JOIN models m ON m.id=o.model_id
+      LEFT JOIN labs l ON l.id=m.lab_id
       LEFT JOIN openrouter_route_variants rv ON rv.id=x.route_variant_id
       LEFT JOIN sources s ON s.id=x.source_id
       WHERE {condition}
