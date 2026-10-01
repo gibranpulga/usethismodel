@@ -23,6 +23,7 @@ from .db import get_db
 from .domain import compatibility_for, compatible_route_rows
 from .query import (
     access_route_rows,
+    interpret_search,
     modality_category,
     normalize_context,
     offer_rows,
@@ -33,6 +34,17 @@ from .query import (
 public = Blueprint("public", __name__)
 API_VERSION = "v1"
 TRUE_VALUES = {"1", "true", "yes", "on"}
+FALSE_VALUES = {"0", "false", "no", "off"}
+
+
+def _validate_boolean_filters(args, keys):
+    """Reject misspelled boolean filters instead of silently treating them as false."""
+    for key in keys:
+        value = args.get(key)
+        if value is not None and str(value).lower() not in TRUE_VALUES | FALSE_VALUES:
+            return jsonify({"error": {"code": "invalid_filter",
+                                       "message": f"{key} must be true or false."}}), 400
+    return None
 
 
 def public_origin() -> str:
@@ -113,8 +125,8 @@ def _route_json(row, compatibility=None):
     price_classes = [dict(price) for price in get_db().execute(
       """SELECT pr.price_type,pr.amount,pr.currency,pr.unit,pr.context_threshold,
                 pr.valid_from,pr.price_note,s.name source_name,s.url source_url,
-                CASE WHEN s.id IS NULL THEN 'unknown'
-                     WHEN s.source_type IN ('official_provider','official_docs','official_metadata')
+      CASE WHEN s.id IS NULL THEN 'unknown'
+                     WHEN lower(s.source_type) LIKE 'official%'
                        AND lower(s.name) NOT LIKE '%openrouter%' THEN 'official_provider'
                      ELSE 'aggregator_observed' END source_type
          FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id
@@ -190,6 +202,8 @@ def normalized_filters(args):
     for key in ("tools", "mcp", "free", "included", "open_weights", "commercial", "reasoning",
                 "vision", "caching", "batch", "text_to_3d", "image_to_3d"):
         if key in values:
+            if str(values[key]).lower() not in TRUE_VALUES | FALSE_VALUES:
+                raise ValueError(f"{key} must be true or false.")
             values[key] = "1" if _truth(values[key]) else "0"
     if values.get("type", "").lower() == "3d":
         values["type"] = "3D generation"
@@ -216,7 +230,10 @@ def _harness(value):
 
 def filtered_routes(args):
     try:
-        filters = normalized_filters(args)
+        interpreted, applied = interpret_search(args)
+        filters = normalized_filters(interpreted)
+        if applied:
+            filters["interpreted"] = applied
     except ValueError as exc:
         return [], {"filter_errors": [str(exc)], **{k: v for k, v in args.items()}}
     harness = _harness(filters.get("harness"))
@@ -233,7 +250,7 @@ def filtered_routes(args):
         if not workflow:
             filters["filter_errors"] = [f"Unknown workflow: {filters['workflow']}"]
             return [], filters
-    route_filters = {key: value for key, value in filters.items() if key != "workflow"}
+    route_filters = {key: value for key, value in filters.items() if key not in {"workflow", "interpreted"}}
     try:
         requested_limit = max(1, int(filters.get("limit", 100)))
     except (TypeError, ValueError):
@@ -275,6 +292,13 @@ def filtered_routes(args):
         filters["filter_errors"] = [str(exc)]
         return [], filters
     return candidates, filters
+
+
+def _filter_error_response(filters):
+    errors = filters.get("filter_errors", [])
+    if errors:
+        return jsonify({"error": {"code": "invalid_filter", "message": errors[0]}}), 400
+    return None
 
 
 @public.get("/api/v1")
@@ -339,9 +363,42 @@ def openapi_spec():
 @public.get("/api/v1/models")
 def api_models():
     public_filters = _unpaged_args()
+    if not public_filters:
+        db = get_db()
+        total = db.execute("SELECT COUNT(*) FROM models").fetchone()[0]
+        page, error = _api_page(range(total))
+        if error:
+            return jsonify(error[0]), error[1]
+        _, pagination = page
+        limit = pagination["limit"]
+        offset = pagination["offset"]
+        model_rows = [dict(row) for row in db.execute("""SELECT m.id,m.canonical_name name,m.canonical_slug slug,
+          COALESCE(l.name,m.vendor) lab,m.modality,m.open_weights,m.status,m.released_at,m.identity_kind
+          FROM models m LEFT JOIN labs l ON l.id=m.lab_id ORDER BY m.canonical_name LIMIT ? OFFSET ?""",
+          (limit, offset))]
+        route_data = route_rows(db, {"model_ids": [row["id"] for row in model_rows],
+                                     "limit": 100000, "offset": 0}) if model_rows else []
+        grouped = {}
+        for row in model_rows:
+            grouped[row["id"]] = {"id":row["id"],"name":row["name"],"slug":row["slug"],
+              "lab":row["lab"],"type":modality_category(row["modality"], row["name"]),
+              "modality_category":modality_category(row["modality"], row["name"]),
+              "raw_modality":row["modality"],"open_weights":bool(row["open_weights"]),
+              "status":row["status"],"release_date":row["released_at"],
+              "identity_kind":row["identity_kind"],
+              "identity_status":"UNRESOLVED" if row["identity_kind"] == "UNKNOWN" else "VERIFIED",
+              "routes":[]}
+        for route in route_data:
+            grouped[route["model_id"]]["routes"].append(_route_json(route))
+        response = _envelope(list(grouped.values()), **pagination)
+        response.set_etag(sha256(response.get_data()).hexdigest(), weak=False)
+        response.headers.setdefault("Cache-Control", "public, max-age=60, stale-while-revalidate=30")
+        return response.make_conditional(request)
     filters_in = dict(public_filters)
     filters_in.update(limit=100000, offset=0)
     routes, filters = filtered_routes(filters_in)
+    if error := _filter_error_response(filters):
+        return error
     grouped = {}
     for route in routes:
         model = grouped.setdefault(route["model_id"], {
@@ -407,7 +464,13 @@ def api_providers():
 
 @public.get("/api/v1/plans")
 def api_plans():
-    filters = normalized_filters(_unpaged_args())
+    args = _unpaged_args()
+    if error := _validate_boolean_filters(args, ("coding", "api", "subscription", "free")):
+        return error
+    try:
+        filters = normalized_filters(args)
+    except ValueError as exc:
+        return jsonify({"error": {"code": "invalid_filter", "message": str(exc)}}), 400
     for key in ("coding", "api", "subscription"):
         if key in filters:
             filters[key] = "1" if _truth(filters[key]) else "0"
@@ -463,13 +526,19 @@ def api_workflows():
 
 @public.get("/api/v1/offers")
 def api_offers():
-    include_expired = request.args.get("status") not in {None, "current", "active"}
+    status = request.args.get("status")
+    if status not in {None, "current", "active", "all", "expired"}:
+        return jsonify({"error": {"code": "invalid_filter",
+                                   "message": "status must be current, active, all, or expired."}}), 400
+    include_expired = status in {"all", "expired"}
     return _paged_envelope(offer_rows(get_db(), include_expired=include_expired),
                      status="all" if include_expired else "current")
 
 
 @public.get("/api/v1/free-routes")
 def api_free_routes():
+    if error := _validate_boolean_filters(request.args, ("tools",)):
+        return error
     tools_only = _truth(request.args.get("tools"))
     filters = _unpaged_args()
     filters.pop("tools", None)
@@ -521,7 +590,9 @@ def api_benchmarks():
     benchmark_name = request.args.get("benchmark")
     version = request.args.get("version")
     model = request.args.get("model")
-    current_only = request.args.get("current_only", "false").casefold() in {"1", "true", "yes"}
+    if error := _validate_boolean_filters(request.args, ("current_only",)):
+        return error
+    current_only = request.args.get("current_only", "false").casefold() in TRUE_VALUES
     if benchmark_name:
         clauses.append("b.name=?")
         params.append(benchmark_name)
@@ -592,6 +663,8 @@ def api_compatibility():
     filters_in = _unpaged_args()
     filters_in.update(limit=100000, offset=0)
     routes, filters = filtered_routes(filters_in)
+    if error := _filter_error_response(filters):
+        return error
     data = [_route_json(row, row.get("_compatibility") or compatibility_for(
         get_db(), harness["id"], row["offering_id"], filters.get("mcp") == "1")) for row in routes]
     return _paged_envelope(data, harness={"id": harness["id"], "name": harness["name"], "slug": slugify(harness["name"])}, warnings=filters.get("filter_errors", []))
@@ -602,6 +675,8 @@ def api_search():
     filters_in = _unpaged_args()
     filters_in.update(limit=100000, offset=0)
     routes, filters = filtered_routes(filters_in)
+    if error := _filter_error_response(filters):
+        return error
     return _paged_envelope([_route_json(row, row.get("_compatibility")) for row in routes], filters=filters, warnings=filters.get("filter_errors", []))
 
 

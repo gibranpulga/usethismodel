@@ -68,6 +68,29 @@ def test_filters_pagination_sources_and_freshness(mcp_app):
     assert all(route["price_usd_per_million_tokens"]["output"] == 0 for route in free["items"])
 
 
+def test_natural_search_applies_harness_and_price_facets(mcp_app):
+    free_tools = call("search_provider_routes", {"query": "free tools", "limit": 10}).structured_content
+    assert free_tools["items"]
+    assert all(route["free_status"] == "FREE" and route["capabilities"]["tools"] == "YES"
+               for route in free_tools["items"])
+    hermes = call("search_provider_routes", {"query": "works with Hermes", "limit": 5}).structured_content
+    assert hermes["items"]
+    assert all(route["compatibility"]["harness"] == "Hermes Agent" for route in hermes["items"])
+
+
+def test_route_price_evidence_includes_source_freshness_and_price_terms(mcp_app):
+    from pathlib import Path
+    with mcp_app.app_context():
+        apply_snapshot(app_get_db(), Path(__file__).resolve().parents[1] / "data" / "catalog.json")
+    result = call("search_provider_routes", {"provider": "DeepSeek", "query": "V4 Pro", "limit": 10}).structured_content
+    route = next(item for item in result["items"] if item["route_id"] == 1085)
+    evidence = {item["price_type"]: item for item in route["price_evidence"]}
+    assert evidence["INPUT"]["amount"] == 0.66
+    assert evidence["INPUT"]["source_url"] == "https://api-docs.deepseek.com/quick_start/pricing/"
+    assert evidence["INPUT"]["price_observed_at"] == "2026-10-01T00:00:00+00:00"
+    assert "peak rate is $1.32" in evidence["INPUT"]["price_note"]
+
+
 def test_harness_context_and_cost_filters(mcp_app):
     result = call("find_cheapest_routes", {
         "harness": "Hermes", "tools": True, "min_context": 500_000,
@@ -121,6 +144,10 @@ def test_streamable_http_initializes_and_site_is_still_served(mcp_app, monkeypat
         )
     assert response.status_code == 200
     assert response.json()["result"]["serverInfo"]["name"] == "usethismodel"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-robots-tag"] == "noindex, nofollow"
+    assert response.headers["content-security-policy"].startswith("default-src 'self'")
 
 
 def test_public_mcp_rate_limit(mcp_app, monkeypatch):
@@ -133,6 +160,9 @@ def test_public_mcp_rate_limit(mcp_app, monkeypatch):
     assert limited.status_code == 429
     assert limited.headers["retry-after"] == "60"
     assert limited.json()["error"] == "rate_limit_exceeded"
+    assert limited.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert limited.headers["x-content-type-options"] == "nosniff"
+    assert limited.headers["x-robots-tag"] == "noindex, nofollow"
 
 
 def test_mcp_compatibility_has_no_catalog_candidate_ceiling(mcp_app):

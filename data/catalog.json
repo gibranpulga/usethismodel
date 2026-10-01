@@ -772,7 +772,7 @@
       },
       {
         "path": "snapshot/pricing_records/000003.json",
-        "sha256": "f1deaaa44de64d51f755c81106c1317913f10efa39155d6359123897c51e391d"
+        "sha256": "b1e40627c47fc9947049e3b2b271e1c7f30de368682b31bf2f8822bf0d083afd"
       },
       {
         "path": "snapshot/pricing_records/000004.json",
@@ -852,7 +852,7 @@
       },
       {
         "path": "snapshot/pricing_records/000023.json",
-        "sha256": "c717647582a756d6de372b86b90721e0028e7da046cf176c0794533d0649052d"
+        "sha256": "0435b68eabea28f9630bebbae013d85ebb0e1ce1aa3db7c8dd3a6ae55abd0625"
       },
       {
         "path": "snapshot/pricing_records/000024.json",
@@ -868,7 +868,7 @@
       },
       {
         "path": "snapshot/pricing_records/000027.json",
-        "sha256": "306e6e55fd483b745466dfa5635593866dd0e1fcd2d6bb42922342737382e902"
+        "sha256": "e67c41cb039bd7bc690cb07da4fefe8ff1865b272fbe3364c07a406dd7fc2e71"
       }
     ],
     "provider_offerings": [

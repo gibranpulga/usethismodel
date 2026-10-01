@@ -38,3 +38,4 @@ html[data-theme="light"] .status.unknown{border-color:#cbd2d1;color:#53615b;back
 html[data-theme="light"] .status.caveat,html[data-theme="light"] .notice.caveat{border-color:#e3c78d;color:#76500f;background:#fff7e5}
 html[data-theme="dark"] .status.available{border-color:#2f6a4f;color:#8ce0b2;background:#123326}
 html[data-theme="dark"] .status.unavailable{border-color:#784243;color:#f0a2a3;background:#351d20}
+.price-qualification{margin:.35rem 0;color:var(--ink-soft);font-size:.82rem;line-height:1.4}

@@ -28,6 +28,7 @@ from .db import get_db as _get_db
 from .domain import compatible_route_rows
 from .public import slugify
 from .query import (
+    interpret_search,
     modality_category,
     normalize_context,
     offer_rows,
@@ -136,6 +137,17 @@ def _route_source(row) -> list[dict[str, Any]]:
 
 
 def _route_json(row, compatibility=None) -> dict[str, Any]:
+    price_evidence = [dict(item) for item in get_db().execute("""SELECT pr.price_type,pr.amount,
+      pr.currency,pr.unit,pr.context_threshold,pr.price_note,pr.valid_from price_observed_at,
+      s.name source_name,s.url source_url,s.source_type FROM pricing_records pr
+      LEFT JOIN sources s ON s.id=pr.source_id
+      WHERE pr.offering_id=? AND pr.valid_until IS NULL
+      ORDER BY pr.price_type,pr.context_threshold""", (row["offering_id"],))]
+    sources = _route_source(row)
+    for item in price_evidence:
+        source = {"name": item["source_name"], "url": item["source_url"]}
+        if source["url"] and source not in sources:
+            sources.append(source)
     result = {
         "route_id": row["offering_id"],
         "api_model_id": row["api_model_id"],
@@ -148,6 +160,7 @@ def _route_json(row, compatibility=None) -> dict[str, Any]:
         "price_usd_per_million_tokens": {"input": row["input_price"],
                                            "output": row["output_price"],
                                            "cache_read": row["cache_read_price"]},
+        "price_evidence": price_evidence,
         "capabilities": {"tools": row["tool_support"],
                          "structured_output": row["structured_output_support"],
                          "reasoning": "YES" if row["reasoning"] else "UNKNOWN",
@@ -159,7 +172,7 @@ def _route_json(row, compatibility=None) -> dict[str, Any]:
         "access_requirement": row["access_requirement"],
         "active_deal": bool(row["active_deal"]),
         "last_verified_at": row["last_verified_at"] or row["fetched_at"],
-        "sources": _route_source(row),
+        "sources": sources,
     }
     if row["media_price"] is not None:
         result["media_price"] = {"amount": row["media_price"], "unit": row["media_price_unit"],
@@ -237,6 +250,10 @@ def _compatibility_compute_lock(key):
 
 def _routes(db, filters: dict[str, Any], harness_name: str | None = None,
             workflow_name: str | None = None, require_mcp: bool = False) -> list[dict[str, Any]]:
+    filters, _interpreted = interpret_search(filters)
+    harness_name = harness_name or filters.pop("harness", None)
+    workflow_name = workflow_name or filters.pop("workflow", None)
+    require_mcp = require_mcp or str(filters.pop("mcp", "0")) in {"1", "true", "True"}
     harness = _harness(db, harness_name)
     if harness_name and not harness:
         raise ToolError(f"Unknown harness: {harness_name}")
@@ -809,6 +826,37 @@ class PublicRequestObservabilityMiddleware:
                 label, scope.get("method", "UNKNOWN"), status_code, round(elapsed * 1000))
 
 
+class SecurityHeadersMiddleware:
+    """Apply transport and browser security headers to ASGI, MCP, and limiter responses."""
+
+    HEADERS = (
+        (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
+        (b"x-content-type-options", b"nosniff"),
+        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+        (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+        (b"content-security-policy", b"default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"),
+    )
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path", "")
+
+        async def secure_send(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                present = {key.lower() for key, _ in headers}
+                headers.extend((key, value) for key, value in self.HEADERS if key not in present)
+                if path == "/mcp" or path.startswith("/mcp/"):
+                    if b"x-robots-tag" not in present:
+                        headers.append((b"x-robots-tag", b"noindex, nofollow"))
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, secure_send)
+
+
 def create_http_app(flask_app):
     bind_app(flask_app)
     mcp_app = server.streamable_http_app(streamable_http_path="/mcp", json_response=True,
@@ -825,7 +873,8 @@ def create_http_app(flask_app):
     rate = int(os.getenv("MCP_RATE_LIMIT_PER_MINUTE", "60"))
     limited = RateLimitMiddleware(combined, rate, flask_app)
     observed = PublicRequestObservabilityMiddleware(limited)
-    return AggregateUsageMiddleware(observed, flask_app)
+    observed_usage = AggregateUsageMiddleware(observed, flask_app)
+    return SecurityHeadersMiddleware(observed_usage)
 
 
 def main():

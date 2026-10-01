@@ -239,6 +239,13 @@ def route_rows(db, filters=None):
             params.append(int(filters["model_id"]))
         except (TypeError, ValueError):
             return []
+    model_ids = filters.get("model_ids")
+    if model_ids is not None:
+        model_ids = [int(value) for value in model_ids]
+        if not model_ids:
+            return []
+        clauses.append(f"m.id IN ({','.join('?' for _ in model_ids)})")
+        params.extend(model_ids)
     if filters.get("provider_id") is not None:
         clauses.append("COALESCE(p.canonical_provider_id,p.id)=?")
         try:
@@ -350,8 +357,10 @@ def route_rows(db, filters=None):
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) input_price,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='OUTPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) output_price,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='CACHE_READ' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) cache_read_price,
-          (SELECT CASE WHEN s.source_type IN ('official_provider','official_docs','official_metadata') AND lower(s.name) NOT LIKE '%openrouter%' THEN 'official_provider' ELSE 'aggregator_observed' END FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) input_price_source_type,
-          (SELECT CASE WHEN s.source_type IN ('official_provider','official_docs','official_metadata') AND lower(s.name) NOT LIKE '%openrouter%' THEN 'official_provider' ELSE 'aggregator_observed' END FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id WHERE pr.offering_id=o.id AND pr.price_type='OUTPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) output_price_source_type,
+          (SELECT price_note FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) input_price_note,
+          (SELECT price_note FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type='OUTPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) output_price_note,
+          (SELECT CASE WHEN lower(s.source_type) LIKE 'official%' AND lower(s.name) NOT LIKE '%openrouter%' THEN 'official_provider' ELSE 'aggregator_observed' END FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id WHERE pr.offering_id=o.id AND pr.price_type='INPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) input_price_source_type,
+          (SELECT CASE WHEN lower(s.source_type) LIKE 'official%' AND lower(s.name) NOT LIKE '%openrouter%' THEN 'official_provider' ELSE 'aggregator_observed' END FROM pricing_records pr LEFT JOIN sources s ON s.id=pr.source_id WHERE pr.offering_id=o.id AND pr.price_type='OUTPUT' AND pr.valid_until IS NULL ORDER BY (pr.context_threshold IS NOT NULL),pr.context_threshold,pr.valid_from DESC,pr.id DESC LIMIT 1) output_price_source_type,
           (SELECT amount FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type NOT IN ('INPUT','OUTPUT','CACHE_READ','CACHE_WRITE','BATCH_INPUT','BATCH_OUTPUT') AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) media_price,
           (SELECT unit FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type NOT IN ('INPUT','OUTPUT','CACHE_READ','CACHE_WRITE','BATCH_INPUT','BATCH_OUTPUT') AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) media_price_unit,
           (SELECT price_type FROM pricing_records pr WHERE pr.offering_id=o.id AND pr.price_type NOT IN ('INPUT','OUTPUT','CACHE_READ','CACHE_WRITE','BATCH_INPUT','BATCH_OUTPUT') AND pr.valid_until IS NULL ORDER BY pr.valid_from DESC,pr.id DESC LIMIT 1) media_price_type,

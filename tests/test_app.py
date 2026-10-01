@@ -547,6 +547,17 @@ def test_first_party_price_provenance_tiers_and_batch_classes_are_public(app, cl
     assert router_route["pricing"]["source_label"] == "Aggregator-observed price"
     assert {row["source_type"] for row in router_route["pricing"]["classes"]} == {"aggregator_observed"}
 
+    deepseek = client.get("/api/v1/models/deepseek/deepseek-v4-pro-0813").json["data"]["routes"]
+    direct = next(row for row in deepseek if row["id"] == 1085)
+    prices = {row["price_type"]: row for row in direct["pricing"]["classes"]}
+    assert (prices["INPUT"]["amount"], prices["OUTPUT"]["amount"],
+            prices["CACHE_READ"]["amount"]) == (0.66, 1.98, 0.022)
+    assert all(prices[key]["source_type"] == "official_provider"
+               for key in ("INPUT", "OUTPUT", "CACHE_READ"))
+    assert "peak rate is $1.32" in prices["INPUT"]["price_note"]
+    assert "CACHE_WRITE" not in prices
+    assert b"peak rate is $1.32" in client.get("/routes/deepseek/deepseek-v4-pro").data
+
 
 def test_media_routes_keep_native_pricing_units_and_features(client):
     response = client.get("/models?q=3d")
@@ -602,7 +613,7 @@ def test_malformed_numeric_filters_do_not_error(client):
     assert response.status_code == 200
     assert b"Filter issue" in response.data
     api = client.get("/api/v1/search?context=nope")
-    assert api.status_code == 200 and api.json["meta"]["warnings"]
+    assert api.status_code == 400 and api.json["error"]["code"] == "invalid_filter"
 
 
 @pytest.mark.parametrize("value", ["1M", "1M+", "1000000", "1,000,000", "1000K"])
@@ -915,6 +926,32 @@ def test_invalid_pagination_is_rejected_and_large_limit_is_capped(client):
     assert client.get('/api/v1/models?page=0').status_code == 400
     assert client.get('/api/v1/models?page=2&offset=20').status_code == 400
     assert client.get('/api/v1/models?limit=100000').json['meta']['limit'] == 250
+
+
+@pytest.mark.parametrize('path', [
+    '/api/v1/search?tools=perhaps',
+    '/api/v1/models?free=maybe',
+    '/api/v1/compatibility?harness=opencode&tools=nope',
+    '/api/v1/free-routes?tools=maybe',
+    '/api/v1/plans?coding=truth',
+    '/api/v1/offers?status=maybe',
+    '/api/v1/benchmarks?current_only=perhaps',
+    '/api/v1/search?harness=not-a-harness',
+])
+def test_invalid_api_filters_are_rejected_instead_of_silently_reinterpreted(client, path):
+    response = client.get(path)
+    assert response.status_code == 400
+    assert response.json['error']['code'] == 'invalid_filter'
+
+
+def test_api_natural_search_applies_and_reports_interpreted_facets(client):
+    compatibility = client.get('/api/v1/compatibility?harness=gemini-cli&limit=1').json
+    search = client.get('/api/v1/search?q=gemini&limit=1').json
+    assert search['meta']['total'] == compatibility['meta']['total']
+    assert 'Harness: Gemini CLI' in search['meta']['filters']['interpreted']
+    unreal = client.get('/api/v1/search?q=OpenCode+Unreal+MCP&limit=1').json
+    assert unreal['meta']['filters']['workflow'] == 'unreal-engine'
+    assert 'MCP workflow' in unreal['meta']['filters']['interpreted']
 
 
 def test_free_route_api_applies_provider_and_access_semantics(client):
