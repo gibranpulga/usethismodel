@@ -43,35 +43,11 @@ PRESETS = {
 }
 
 
-def brand_mark(name):
-    """A local, deterministic wordmark fallback; no remote logo assets are fetched."""
-    value = str(name or "AI provider").strip()
-    normalized = value.lower().replace(" ", "")
-    brands = (
-        (("openai",), "openai", "AI"), (("anthropic",), "anthropic", "A"),
-        (("google",), "google", "G"), (("deepseek",), "deepseek", "DS"),
-        (("z.ai", "zhipu", "zai"), "zai", "Z"), (("alibaba", "qwen"), "qwen", "Q"),
-        (("mistral",), "mistral", "M"), (("moonshot", "kimi"), "kimi", "K"),
-        (("minimax",), "minimax", "MM"), (("openrouter",), "openrouter", "OR"),
-    )
-    for names, key, mark in brands:
-        if any(alias in normalized for alias in names):
-            return key, mark, value
-    words = [word for word in value.split() if word]
-    mark = "".join(word[0] for word in words[:2]).upper() or "AI"
-    return "fallback", mark, value
-
-
 def human_offer_model(name):
     """Trim provider prefixes and catalog date suffixes from compact offer titles."""
     value = str(name or "AI model").strip()
     value = re.sub(r"^(?:DeepSeek|Anthropic|OpenAI|Google|Qwen|Alibaba|Mistral|Moonshot|MiniMax|Inception|inclusionAI|Z\.ai)\s*:\s*", "", value, flags=re.I)
     return re.sub(r"\s+(?:20\d{2}|\d{4})$", "", value)
-
-
-def brand_logo(key):
-    assets = {"anthropic", "google", "deepseek", "qwen", "mistral", "kimi", "minimax", "openrouter"}
-    return f"/static/logos/{key}.svg" if key in assets else None
 
 
 def price_history_chart(records):
@@ -208,9 +184,9 @@ def create_app(test_config=None):
             "robots_meta": "noindex,follow" if request.args else "index,follow",
             "csp_nonce": g.csp_nonce,
             "freshness_text": freshness_text,
-            "brand_mark": brand_mark,
             "human_offer_model": human_offer_model,
-            "brand_logo": brand_logo,
+            "resolve_logo": __import__("app.logo_system", fromlist=["resolve_logo"]).resolve_logo,
+            "logo": __import__("app.logo_system", fromlist=["logo_html"]).logo_html,
         }
 
     def db():

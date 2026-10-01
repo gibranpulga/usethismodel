@@ -73,3 +73,11 @@ html[data-theme="light"] .status.caveat,html[data-theme="light"] .notice.caveat{
 html[data-theme="dark"] .status.available{border-color:#2f6a4f;color:#8ce0b2;background:#123326}
 html[data-theme="dark"] .status.unavailable{border-color:#784243;color:#f0a2a3;background:#351d20}
 .price-qualification{margin:.35rem 0;color:var(--ink-soft);font-size:.82rem;line-height:1.4}
+
+/* Local, compact lab and route-provider identities. */
+.entity-logo{display:inline-block;vertical-align:middle;flex:none;object-fit:contain;padding:3px;border:1px solid var(--border);border-radius:7px;background:#fff;color:#111}
+.entity-logo.logo-small{width:25px;height:25px}.entity-logo.logo-medium{width:32px;height:32px}.entity-logo.logo-large{width:42px;height:42px;padding:5px;margin-right:5px}
+.entity-logo-fallback{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;flex:none;width:25px;height:25px;border:1px solid var(--border);border-radius:7px;background:var(--surface-2);color:var(--ink-soft);font-size:10px;font-weight:700}
+.entity-logo-fallback.logo-medium{width:32px;height:32px}.entity-logo-fallback.logo-large{width:42px;height:42px}
+.home-card-provider .entity-logo{width:20px;height:20px;padding:2px}.table-model-name .entity-logo{margin-right:5px}
+.entity-logo-wide.logo-small{width:64px}.entity-logo-wide.logo-medium{width:76px}.entity-logo-wide.logo-large{width:92px}

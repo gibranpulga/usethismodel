@@ -1,5 +1,5 @@
-# Brand icons
+# Brand logo system
 
-The locally stored SVG files in `app/static/logos/` are from Simple Icons (CC0 1.0 Universal): https://github.com/simple-icons/simple-icons/tree/develop/icons.
+Frontend lab and provider marks resolve through `app/logo_system.py` and render through the shared `logo()` template helper. Assets are local under `app/static/logos/labs/` and `app/static/logos/providers/`; no remote logo requests occur at runtime. Source and license notes are recorded in [logo-sources.md](logo-sources.md).
 
-Available marks are used where a matching icon exists. Other names use accessible initials as a fallback.
+Unknown brands use a small accessible initials fallback. The fallback is hidden from assistive technology when adjacent visible text already names the entity.
