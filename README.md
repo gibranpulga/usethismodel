@@ -84,7 +84,7 @@ For stdio, replace each remote URL declaration with the client's local command
 form invoking the repository environment's Python and `-m app.mcp_server`, with
 the repository as its working directory.
 
-All 16 tools are annotated read-only and return bounded, paginated results. They
+All 17 tools are annotated read-only and return bounded, paginated results. They
 include canonical model identity, exact provider route, prices, capabilities,
 compatibility evidence, verification dates, and public sources where applicable.
 Static MCP resources summarize models, providers, harnesses, active offers, and
